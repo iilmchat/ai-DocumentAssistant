@@ -32,10 +32,13 @@ async def async_process_document(document_id: str, file_path: str):
             ext = os.path.splitext(file_path)[1]
             text = extract_text_from_file(file_path, ext)
             
-            summary = await generate_document_summary(text)
-            doc.summary = summary
-
+            # 1. Разбиваем текст на чанки ОДИН раз (для саммари и для векторов)
             chunks = split_text_into_chunks(text)
+            
+            # 2. Генерируем саммари по чанкам (Map-Reduce)
+            from app.services.ai_service import generate_document_summary_from_chunks
+            summary = await generate_document_summary_from_chunks(chunks)
+            doc.summary = summary
             
             batch_size = 100
             for i in range(0, len(chunks), batch_size):

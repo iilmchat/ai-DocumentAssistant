@@ -1,4 +1,6 @@
+import json
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,11 +16,7 @@ class ChatRequest(BaseModel):
     document_id: uuid.UUID
     question: str
 
-class ChatResponse(BaseModel):
-    answer: str
-    sources: list[str]
-
-@router.post("/ask", response_model=ChatResponse)
+@router.post("/ask")
 async def ask_question(
     payload: ChatRequest,
     db: AsyncSession = Depends(get_db)
@@ -43,7 +41,10 @@ async def ask_question(
     relevant_chunks = [row[0] for row in result.fetchall()]
 
     if not relevant_chunks:
-        return ChatResponse(answer="Не удалось найти релевантную информацию в документе.", sources=[])
+        async def empty_stream():
+            yield f"data: {json.dumps({'type': 'token', 'content': 'Не удалось найти релевантную информацию в документе.'})}\n\n"
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        return StreamingResponse(empty_stream(), media_type="text/event-stream")
 
     context = "\n\n---\n\n".join(relevant_chunks)
     prompt = (
@@ -53,14 +54,32 @@ async def ask_question(
         f"Вопрос: {payload.question}"
     )
 
-    response = await client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "Ты полезный AI-ассистент, который отвечает на вопросы строго по предоставленным фрагментам документов."},
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.2
-    )
-    
-    answer = response.choices[0].message.content
-    return ChatResponse(answer=answer, sources=relevant_chunks)
+    async def event_stream():
+        # 1. Сначала отправляем источники (чтобы фронтенд мог их показать сразу)
+        yield f"data: {json.dumps({'type': 'sources', 'sources': relevant_chunks})}\n\n"
+        
+        try:
+            # 2. Запускаем потоковую генерацию от OpenAI
+            stream = await client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "Ты полезный AI-ассистент, который отвечает на вопросы строго по предоставленным фрагментам документов."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.2,
+                stream=True
+            )
+            
+            # 3. Транслируем каждый токен на фронтенд
+            async for chunk in stream:
+                if chunk.choices[0].delta.content:
+                    content = chunk.choices[0].delta.content
+                    yield f"data: {json.dumps({'type': 'token', 'content': content})}\n\n"
+            
+            # 4. Отправляем сигнал завершения
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+            
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
