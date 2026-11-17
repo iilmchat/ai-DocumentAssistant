@@ -2,7 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Кастомный скроллбар для чата и конспектов */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;

@@ -67,7 +67,6 @@ export function useDocumentChat(documentId: string | null) {
       const fullText = response.answer;
       let currentIndex = 0;
 
-      // Плавный typewriter-эффект вывода текста
       typewriterTimerRef.current = window.setInterval(() => {
         currentIndex += 3;
         const slice = fullText.slice(0, currentIndex);

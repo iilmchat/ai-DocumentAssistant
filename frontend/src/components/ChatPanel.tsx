@@ -76,7 +76,6 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
 
   return (
     <div className="flex flex-col h-full max-w-4xl mx-auto w-full">
-      {/* Лента сообщений */}
       <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center py-12">
@@ -135,7 +134,6 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
         <div ref={bottomRef} />
       </div>
 
-      {/* Поле ввода */}
       <div className="p-4 bg-white border-t border-slate-200">
         <form onSubmit={handleSubmit} className="flex items-center gap-2 max-w-4xl mx-auto">
           <input

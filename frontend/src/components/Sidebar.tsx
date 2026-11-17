@@ -71,7 +71,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <aside className="w-full md:w-80 bg-white border-b md:border-b-0 md:border-r border-slate-200 flex flex-col h-auto md:h-screen shrink-0">
-      {/* Шапка */}
       <div className="p-4 border-b border-slate-200 flex items-center gap-2.5">
         <div className="w-9 h-9 rounded-lg bg-indigo-600 flex items-center justify-center text-white shadow-sm">
           <Sparkles className="w-5 h-5" />
@@ -82,7 +81,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
 
-      {/* Кнопка загрузки */}
       <div className="p-4">
         <input
           ref={fileInputRef}
@@ -113,7 +111,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </p>
       </div>
 
-      {/* Список документов */}
       <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-1.5 max-h-60 md:max-h-none">
         <div className="px-2 py-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
           Ваши документы ({documents.length})

@@ -14,7 +14,7 @@ export function useDocuments() {
       setDocuments(data);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ошибка загрузки');
+      setError(err instanceof Error ? err.message : 'Сервер API недоступен');
     } finally {
       setIsLoading(false);
     }
@@ -24,7 +24,6 @@ export function useDocuments() {
     fetchDocuments();
   }, [fetchDocuments]);
 
-  // Автоматический polling, пока есть документы в статусе pending или processing
   useEffect(() => {
     const hasPendingDocs = documents.some(
       (doc) => doc.status === 'pending' || doc.status === 'processing'
