@@ -1,7 +1,7 @@
 import os
 import re
 from typing import List
-from PyPDF2 import PdfReader
+from pypdf import PdfReader
 from docx import Document as DocxDocument
 
 def extract_text_from_file(file_path: str, file_extension: str) -> str:
