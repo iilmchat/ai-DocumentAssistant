@@ -7,6 +7,9 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
     SECRET_KEY: str = "super_secret_key_change_me"
     OPENAI_API_KEY: str = ""
+    # Каталог для загруженных файлов. По умолчанию соответствует пути,
+    # который монтируется как volume shared_storage в Docker-контейнерах.
+    UPLOAD_DIR: str = "storage"
 
     class Config:
         env_file = ".env"

@@ -1,7 +1,7 @@
 import uuid
 from sqlalchemy import Column, String, Text, Integer, ForeignKey, TIMESTAMP, text
 from sqlalchemy.dialects.postgresql import UUID
-from pgvector.sqlalchemy import VECTOR
+from pgvector.sqlalchemy import Vector
 from app.core.database import Base
 
 class User(Base):
@@ -30,4 +30,4 @@ class DocumentChunk(Base):
     document_id = Column(UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
     chunk_index = Column(Integer, nullable=False)
     content = Column(Text, nullable=False)
-    embedding = Column(VECTOR(1536), nullable=False)
+    embedding = Column(Vector(1536), nullable=False)

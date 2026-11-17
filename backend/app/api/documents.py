@@ -3,6 +3,7 @@ import uuid
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from app.core.config import settings
 from app.core.database import get_db
 from app.models.models import Document, User
 from app.schemas.schemas import DocumentResponse
@@ -10,8 +11,14 @@ from app.worker import process_document_task
 
 router = APIRouter(prefix="/api/v1/documents", tags=["Documents"])
 
-UPLOAD_DIR = "storage"
+# Каталог для загруженных файлов. Внутри Docker-контейнера это /app/storage
+# (именно этот путь монтируется в volume shared_storage). При локальном запуске
+# из корня backend/ файлы попадают в ./storage.
+UPLOAD_DIR = settings.UPLOAD_DIR or os.environ.get("STORAGE_PATH") or "storage"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt"]
+
 
 @router.post("/upload", response_model=DocumentResponse, status_code=201)
 async def upload_document(
@@ -27,7 +34,7 @@ async def upload_document(
         await db.refresh(user)
 
     file_ext = os.path.splitext(file.filename)[1]
-    if file_ext.lower() not in [".pdf", ".docx", ".txt"]:
+    if file_ext.lower() not in ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=400, detail="Неподдерживаемый формат файла.")
 
     file_name = f"{uuid.uuid4()}{file_ext}"

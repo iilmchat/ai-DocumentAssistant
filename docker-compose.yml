@@ -43,6 +43,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/ai_documents
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
+      UPLOAD_DIR: /app/storage
     ports:
       - "8000:8000"
     volumes:
@@ -66,6 +67,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/ai_documents
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
+      UPLOAD_DIR: /app/storage
     volumes:
       - shared_storage:/app/storage
     depends_on:
