@@ -10,8 +10,8 @@ from app.services.ai_service import generate_embeddings, generate_document_summa
 
 celery_app = Celery(
     "worker",
-    broker=os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0"),
-    backend=os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
+    broker=settings.CELERY_BROKER_URL,
+    backend=settings.CELERY_RESULT_BACKEND
 )
 
 engine = create_async_engine(settings.DATABASE_URL, future=True)

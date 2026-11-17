@@ -19,7 +19,7 @@ class Document(Base):
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     title = Column(String(255), nullable=False)
     file_path = Column(String(512), nullable=False)
-    status = Column(String(50), nullable=False, default="pending")  # pending, processing, completed, failed
+    status = Column(String(50), nullable=False, default="pending")
     summary = Column(Text, nullable=True)
     created_at = Column(TIMESTAMP(timezone=True), server_default=text("CURRENT_TIMESTAMP"))
 

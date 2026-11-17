@@ -53,6 +53,17 @@ async def upload_document(
 
 @router.get("/", response_model=list[DocumentResponse])
 async def list_documents(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Document))
+    result = await db.execute(select(Document).order_by(Document.created_at.desc()))
     documents = result.scalars().all()
     return documents
+
+@router.delete("/{document_id}", status_code=204)
+async def delete_document(document_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Document).where(Document.id == document_id))
+    doc = result.scalars().first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Документ не найден.")
+    if os.path.exists(doc.file_path):
+        os.remove(doc.file_path)
+    await db.delete(doc)
+    await db.commit()
