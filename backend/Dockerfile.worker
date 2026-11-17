@@ -1,0 +1,26 @@
+# Этап 2: отдельный образ воркера OCR.
+# tesseract-ocr + rus+eng, ocrmypdf (deskew/denoise предобработка), poppler-utils.
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
+    tesseract-ocr \
+    tesseract-ocr-rus \
+    tesseract-ocr-eng \
+    ocrmypdf \
+    poppler-utils \
+    ghostscript \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+RUN mkdir -p /app/storage
+
+CMD ["celery", "-A", "app.worker.celery_app", "worker", \
+     "--loglevel=info", "-Q", "ocr", "--concurrency=1"]

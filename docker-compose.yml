@@ -60,16 +60,46 @@ services:
       dockerfile: Dockerfile
     container_name: ai_celery_worker
     restart: unless-stopped
-    command: celery -A app.worker.celery_app worker --loglevel=info
+    # Этап 4: обычный воркер слушает только default-очередь
+    command: celery -A app.worker.celery_app worker --loglevel=info -Q default --concurrency=2
     env_file:
       - ./backend/.env
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/ai_documents
       CELERY_BROKER_URL: redis://redis:6379/0
-      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
       UPLOAD_DIR: /app/storage
     volumes:
       - shared_storage:/app/storage
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # Этапы 2 и 4: отдельный контейнер воркера под OCR (Tesseract + ocrmypdf).
+  # Медленные сканы не блокируют быстрые TXT/PDF из очереди default.
+  ocr-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.worker
+    container_name: ai_ocr_worker
+    restart: unless-stopped
+    command: celery -A app.worker.celery_app worker --loglevel=info -Q ocr --concurrency=1
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/ai_documents
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      UPLOAD_DIR: /app/storage
+      OCR_ENGINE: tesseract
+    volumes:
+      - shared_storage:/app/storage
+    deploy:
+      resources:
+        limits:
+          memory: 2g   # Tesseract/OCRmypdf жрут память на больших сканах
     depends_on:
       db:
         condition: service_healthy

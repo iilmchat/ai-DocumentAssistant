@@ -8,10 +8,29 @@ from app.api import documents, chat
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Автоматическая инициализация расширения pgvector и таблиц БД при старте
+    # Автоматическая инициализация расширений БД и таблиц при старте
     async with engine.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
+        # Этап 5: триггер автообновления tsvector под русскую конфигурацию.
+        # websearch_to_tsquery устойчив к "мусорным" запросам пользователей.
+        await conn.execute(text("""
+            CREATE OR REPLACE FUNCTION chunk_search_vector_update() RETURNS trigger AS $$
+            BEGIN
+                NEW.search_vector :=
+                    setweight(to_tsvector('russian', COALESCE(NEW.content, '')), 'A');
+                RETURN NEW;
+            END;
+            $$ LANGUAGE plpgsql;
+        """))
+        await conn.execute(text("""
+            DROP TRIGGER IF EXISTS trg_chunk_search_vector ON document_chunks;
+        """))
+        await conn.execute(text("""
+            CREATE TRIGGER trg_chunk_search_vector
+            BEFORE INSERT OR UPDATE OF content ON document_chunks
+            FOR EACH ROW EXECUTE FUNCTION chunk_search_vector_update();
+        """))
     yield
 
 app = FastAPI(

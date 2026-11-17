@@ -5,8 +5,9 @@ client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
 async def generate_embeddings(texts: list[str]) -> list[list[float]]:
     response = await client.embeddings.create(
-        model="text-embedding-3-small",
-        input=texts
+        model=settings.EMBEDDING_MODEL,
+        input=texts,
+        dimensions=settings.EMBEDDING_DIM,  # фиксируем размерность под колонку vector(N)
     )
     return [item.embedding for item in response.data]
 
