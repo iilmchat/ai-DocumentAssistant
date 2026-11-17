@@ -18,11 +18,9 @@ async def upload_document(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db)
 ):
-    # Для демонстрации берем дефолтного тестового пользователя (или создаем временного)
     result = await db.execute(select(User).limit(1))
     user = result.scalars().first()
     if not user:
-        # Создаем тестового пользователя, если таблица пуста
         user = User(email="test@example.com", password_hash="hashed_dummy")
         db.add(user)
         await db.commit()
@@ -35,12 +33,10 @@ async def upload_document(
     file_name = f"{uuid.uuid4()}{file_ext}"
     file_path = os.path.join(UPLOAD_DIR, file_name)
 
-    # Сохраняем файл локально
     contents = await file.read()
     with open(file_path, "wb") as f:
         f.write(contents)
 
-    # Создаем запись в БД
     new_doc = Document(
         user_id=user.id,
         title=file.filename,
@@ -51,7 +47,6 @@ async def upload_document(
     await db.commit()
     await db.refresh(new_doc)
 
-    # Запускаем фоновую задачу Celery
     process_document_task.delay(str(new_doc.id), file_path)
 
     return new_doc
