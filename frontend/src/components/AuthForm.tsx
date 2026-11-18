@@ -22,7 +22,7 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onAuthenticated }) => {
         mode === 'login'
           ? await apiClient.login(email, password)
           : await apiClient.register(email, password)
-      tokenStore.set(result.access_token)
+      tokenStore.setPair(result)
       onAuthenticated()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка авторизации')

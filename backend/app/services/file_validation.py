@@ -91,7 +91,29 @@ def validate_upload(file_path: str) -> str:
         raise ValidationError("Архив с аномальной степенью сжатия (ZIP-бомба?).")
     if mime not in ALLOWED_MIMES:
         raise ValidationError(f"Неподдерживаемый или подозрительный тип файла: {mime!r}")
+    if mime in IMAGE_MIMES:
+        validate_image_limits(file_path)
     return mime
+
+
+def validate_image_limits(path: str) -> None:
+    """S1: защита от decompression bomb и слишком больших изображений."""
+    from PIL import Image, UnidentifiedImageError
+
+    Image.MAX_IMAGE_PIXELS = settings.MAX_IMAGE_PIXELS
+    try:
+        with Image.open(path) as img:
+            width, height = img.size
+            if (
+                width * height > settings.MAX_IMAGE_PIXELS
+                or max(width, height) > settings.MAX_IMAGE_SIDE_PX
+            ):
+                raise ValidationError("Изображение слишком большое.")
+            img.verify()
+    except ValidationError:
+        raise
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
+        raise ValidationError("Повреждённое или небезопасное изображение.") from exc
 
 
 def count_pdf_pages(path: str) -> int | None:

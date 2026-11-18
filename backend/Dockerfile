@@ -14,7 +14,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN mkdir -p /app/storage
+# S1: не запускаем приложение от root
+RUN useradd --create-home --uid 10001 appuser \
+    && mkdir -p /app/storage \
+    && chown -R appuser:appuser /app
+USER appuser
 
 EXPOSE 8000
 

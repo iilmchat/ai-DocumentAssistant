@@ -9,8 +9,14 @@
 ### `POST /api/v1/auth/register` / `POST /api/v1/auth/login`
 Тело: `{"email": "...", "password": "..."}`. Ответ: `{"access_token": "...", "token_type": "bearer"}`.
 
+### `POST /api/v1/auth/refresh` / `POST /api/v1/auth/logout`
+Обновление пары токенов (ротация refresh) и отзыв access-токена через чёрный список Redis.
+
 ### `GET /api/v1/auth/me`
 Возвращает текущего пользователя (`id`, `email`, `created_at`).
+
+### `GET /api/v1/auth/audit-log?limit=50`
+Журнал действий пользователя (вход, загрузка/удаление документа, регенерация/восстановление конспекта).
 
 ## 1. Документы (`/documents`)
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { apiClient, tokenStore } from '../api/client'
+import { apiClient, refreshTokens, tokenStore } from '../api/client'
 import { UserInfo } from '../types'
 
 export function useAuth() {
@@ -7,6 +7,10 @@ export function useAuth() {
   const [isLoading, setIsLoading] = useState(true)
 
   const refresh = useCallback(async () => {
+    // access-токен мог истечь — пробуем refresh перед тем, как считать сессию потерянной
+    if (!tokenStore.get() && tokenStore.getRefresh()) {
+      await refreshTokens()
+    }
     if (!tokenStore.get()) {
       setUser(null)
       setIsLoading(false)
@@ -15,7 +19,7 @@ export function useAuth() {
     try {
       setUser(await apiClient.getCurrentUser())
     } catch {
-      tokenStore.clear()
+      tokenStore.clearAll()
       setUser(null)
     } finally {
       setIsLoading(false)
@@ -30,7 +34,7 @@ export function useAuth() {
   }, [refresh])
 
   const logout = useCallback(() => {
-    tokenStore.clear()
+    void apiClient.logout()
     setUser(null)
   }, [])
 

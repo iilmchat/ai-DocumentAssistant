@@ -31,9 +31,22 @@ class Settings(BaseSettings):
     OCR_IMAGE_AREA_THRESHOLD: float = 0.85  # картинка занимает >=85% площади листа
     OCR_MAX_PAGES: int = 500  # лимит на число страниц (безопасность)
 
-    # --- Загрузка / безопасность ---
+    # --- Загрузка / безопасность (S1) ---
     MAX_UPLOAD_SIZE_MB: int = 50
     PARSE_TIMEOUT_SECONDS: int = 300
+    MAX_IMAGE_PIXELS: int = 40_000_000  # защита от decompression bomb
+    MAX_IMAGE_SIDE_PX: int = 20_000
+    MAX_DOCUMENTS_PER_USER: int = 100
+    MAX_STORAGE_BYTES_PER_USER: int = 2 * 1024 * 1024 * 1024  # 2 ГБ
+
+    # --- JWT / rate limiting (S1) ---
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
+    LOGIN_RATE_LIMIT: str = "5/minute"
+    REGISTER_RATE_LIMIT: str = "3/minute"
+    CHAT_RATE_LIMIT: str = "30/minute"
+    MAX_FAILED_LOGINS: int = 5
+    LOGIN_LOCKOUT_MINUTES: int = 15
 
     # --- Embeddings / поиск (Этап 5) ---
     EMBEDDING_MODEL: str = "text-embedding-3-large"

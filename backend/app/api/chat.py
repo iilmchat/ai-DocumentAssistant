@@ -8,7 +8,7 @@
 import json
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from openai.types.chat import ChatCompletionMessageParam
 from pydantic import BaseModel
@@ -20,6 +20,7 @@ from app.api.auth import get_current_user
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.errors import NotFoundError
+from app.core.rate_limit import limiter
 from app.models.models import Document, User
 from app.schemas.schemas import SourceCitation
 from app.services.ai_service import client, ensure_embedding_dim, generate_embeddings
@@ -144,7 +145,9 @@ async def _retrieve_context(payload: ChatRequest, db: AsyncSession, current_user
 
 
 @router.post("/ask", response_model=ChatResponse)
+@limiter.limit(settings.CHAT_RATE_LIMIT)
 async def ask_question(
+    request: Request,
     payload: ChatRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -171,7 +174,9 @@ async def ask_question(
 
 
 @router.post("/stream")
+@limiter.limit(settings.CHAT_RATE_LIMIT)
 async def stream_answer(
+    request: Request,
     payload: ChatRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),

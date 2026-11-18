@@ -4,10 +4,12 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
 
 from app.api import auth, chat, documents
 from app.core.config import settings
 from app.core.errors import AppError
+from app.core.rate_limit import limiter
 
 
 @asynccontextmanager
@@ -25,6 +27,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.state.limiter = limiter
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -32,6 +35,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(_request: Request, _exc: RateLimitExceeded) -> JSONResponse:
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Слишком много запросов. Попробуйте позже.", "code": "rate_limited"},
+    )
 
 
 @app.exception_handler(AppError)

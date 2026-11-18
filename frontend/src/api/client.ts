@@ -9,11 +9,23 @@ import {
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? ''
 const TOKEN_KEY = 'ai_document_assistant_token'
+const REFRESH_KEY = 'ai_document_assistant_refresh'
 
 export const tokenStore = {
   get: (): string | null => localStorage.getItem(TOKEN_KEY),
   set: (token: string) => localStorage.setItem(TOKEN_KEY, token),
+  getRefresh: (): string | null => localStorage.getItem(REFRESH_KEY),
+  setRefresh: (token: string) => localStorage.setItem(REFRESH_KEY, token),
+  setPair: (pair: AuthResponse) => {
+    tokenStore.set(pair.access_token)
+    tokenStore.setRefresh(pair.refresh_token)
+  },
   clear: () => localStorage.removeItem(TOKEN_KEY),
+  clearRefresh: () => localStorage.removeItem(REFRESH_KEY),
+  clearAll: () => {
+    tokenStore.clear()
+    tokenStore.clearRefresh()
+  },
 }
 
 function authHeaders(): Record<string, string> {
@@ -23,9 +35,50 @@ function authHeaders(): Record<string, string> {
 
 function handleUnauthorized(response: Response): void {
   if (response.status === 401) {
-    tokenStore.clear()
+    tokenStore.clearAll()
     window.dispatchEvent(new Event('auth:logout'))
   }
+}
+
+let refreshInFlight: Promise<boolean> | null = null
+
+/** S1: бесшовное обновление access-токена через refresh (ротация на бэке). */
+export async function refreshTokens(): Promise<boolean> {
+  const refresh = tokenStore.getRefresh()
+  if (!refresh) return false
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/v1/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh_token: refresh }),
+        })
+        if (!response.ok) return false
+        tokenStore.setPair((await response.json()) as AuthResponse)
+        return true
+      } catch {
+        return false
+      } finally {
+        refreshInFlight = null
+      }
+    })()
+  }
+  return refreshInFlight
+}
+
+/** Обёртка: при 401 один раз обновляет токен и повторяет запрос. */
+async function authFetch(url: string, init: RequestInit = {}, retry = true): Promise<Response> {
+  const response = await fetch(url, {
+    ...init,
+    headers: { ...authHeaders(), ...(init.headers as Record<string, string>) },
+  })
+  if (response.status === 401 && retry && tokenStore.getRefresh()) {
+    const refreshed = await refreshTokens()
+    if (refreshed) return authFetch(url, init, false)
+  }
+  if (response.status === 401) handleUnauthorized(response)
+  return response
 }
 
 export const apiClient = {
@@ -55,22 +108,23 @@ export const apiClient = {
     return response.json()
   },
 
+  async logout(): Promise<void> {
+    try {
+      await authFetch(`${API_BASE_URL}/api/v1/auth/logout`, { method: 'POST' })
+    } finally {
+      tokenStore.clearAll()
+    }
+  },
+
   async getCurrentUser(): Promise<UserInfo> {
-    const response = await fetch(`${API_BASE_URL}/api/v1/auth/me`, {
-      headers: authHeaders(),
-    })
+    const response = await authFetch(`${API_BASE_URL}/api/v1/auth/me`)
     if (!response.ok) throw new Error('Сессия истекла')
     return response.json()
   },
 
   async getDocuments(): Promise<DocumentItem[]> {
-    const response = await fetch(`${API_BASE_URL}/api/v1/documents/`, {
-      headers: authHeaders(),
-    })
-    if (!response.ok) {
-      handleUnauthorized(response)
-      throw new Error('Не удалось загрузить список документов')
-    }
+    const response = await authFetch(`${API_BASE_URL}/api/v1/documents/`)
+    if (!response.ok) throw new Error('Не удалось загрузить список документов')
     return response.json()
   },
 
@@ -78,14 +132,12 @@ export const apiClient = {
     const formData = new FormData()
     formData.append('file', file)
 
-    const response = await fetch(`${API_BASE_URL}/api/v1/documents/upload`, {
+    const response = await authFetch(`${API_BASE_URL}/api/v1/documents/upload`, {
       method: 'POST',
-      headers: authHeaders(),
       body: formData,
     })
 
     if (!response.ok) {
-      handleUnauthorized(response)
       const errData = await response.json().catch(() => ({}))
       throw new Error(errData.detail || 'Ошибка при загрузке документа')
     }
@@ -93,26 +145,18 @@ export const apiClient = {
   },
 
   async deleteDocument(documentId: string): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/api/v1/documents/${documentId}`, {
+    const response = await authFetch(`${API_BASE_URL}/api/v1/documents/${documentId}`, {
       method: 'DELETE',
-      headers: authHeaders(),
     })
-    if (!response.ok) {
-      handleUnauthorized(response)
-      throw new Error('Не удалось удалить документ')
-    }
+    if (!response.ok) throw new Error('Не удалось удалить документ')
   },
 
   /** Этап 7: скачать конспект в нужном формате. */
   async downloadSummary(documentId: string, format: 'md' | 'docx' | 'pdf'): Promise<void> {
-    const response = await fetch(
-      `${API_BASE_URL}/api/v1/documents/${documentId}/export?format=${format}`,
-      { headers: authHeaders() }
+    const response = await authFetch(
+      `${API_BASE_URL}/api/v1/documents/${documentId}/export?format=${format}`
     )
-    if (!response.ok) {
-      handleUnauthorized(response)
-      throw new Error('Не удалось скачать конспект')
-    }
+    if (!response.ok) throw new Error('Не удалось скачать конспект')
     const blob = await response.blob()
     const url = URL.createObjectURL(blob)
     const link = window.document.createElement('a')
@@ -127,23 +171,16 @@ export const apiClient = {
   },
 
   async listVersions(documentId: string): Promise<SummaryVersion[]> {
-    const response = await fetch(`${API_BASE_URL}/api/v1/documents/${documentId}/versions`, {
-      headers: authHeaders(),
-    })
-    if (!response.ok) {
-      handleUnauthorized(response)
-      throw new Error('Не удалось загрузить историю версий')
-    }
+    const response = await authFetch(`${API_BASE_URL}/api/v1/documents/${documentId}/versions`)
+    if (!response.ok) throw new Error('Не удалось загрузить историю версий')
     return response.json()
   },
 
   async regenerateSummary(documentId: string): Promise<SummaryVersion> {
-    const response = await fetch(`${API_BASE_URL}/api/v1/documents/${documentId}/summarize`, {
+    const response = await authFetch(`${API_BASE_URL}/api/v1/documents/${documentId}/summarize`, {
       method: 'POST',
-      headers: authHeaders(),
     })
     if (!response.ok) {
-      handleUnauthorized(response)
       const err = await response.json().catch(() => ({}))
       throw new Error(err.detail || 'Не удалось пересоздать конспект')
     }
@@ -151,14 +188,11 @@ export const apiClient = {
   },
 
   async restoreVersion(documentId: string, versionId: string): Promise<DocumentItem> {
-    const response = await fetch(
+    const response = await authFetch(
       `${API_BASE_URL}/api/v1/documents/${documentId}/versions/${versionId}/restore`,
-      { method: 'POST', headers: authHeaders() }
+      { method: 'POST' }
     )
-    if (!response.ok) {
-      handleUnauthorized(response)
-      throw new Error('Не удалось восстановить версию')
-    }
+    if (!response.ok) throw new Error('Не удалось восстановить версию')
     return response.json()
   },
 
@@ -167,21 +201,14 @@ export const apiClient = {
     question: string,
     signal?: AbortSignal
   ): Promise<ChatResponse> {
-    const response = await fetch(`${API_BASE_URL}/api/v1/chat/ask`, {
+    const response = await authFetch(`${API_BASE_URL}/api/v1/chat/ask`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...authHeaders(),
-      },
-      body: JSON.stringify({
-        document_id: documentId,
-        question,
-      }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ document_id: documentId, question }),
       signal,
     })
 
     if (!response.ok) {
-      handleUnauthorized(response)
       const errData = await response.json().catch(() => ({}))
       throw new Error(errData.detail || 'Ошибка при получении ответа от ИИ')
     }
@@ -202,15 +229,14 @@ export const apiClient = {
     },
     signal?: AbortSignal
   ): Promise<void> {
-    const response = await fetch(`${API_BASE_URL}/api/v1/chat/stream`, {
+    const response = await authFetch(`${API_BASE_URL}/api/v1/chat/stream`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ document_id: documentId, question }),
       signal,
     })
 
     if (!response.ok || !response.body) {
-      handleUnauthorized(response)
       const errData = await response.json().catch(() => ({}))
       throw new Error(errData.detail || 'Не удалось получить поток ответа')
     }

@@ -66,18 +66,20 @@
 
 **Цель:** закрыть пробелы в защите до выхода в прод.
 
-- `[ ] P0` **S1-01** Rate limiting на `/auth/login`, `/auth/register`, `/chat/*` (slowapi или middleware, per-IP + per-user)
-- `[ ] P0` **S1-02** Refresh-токены + чёрный список (Redis) / короткий access TTL; опция httpOnly cookie вместо localStorage `[?]`
-- `[ ] P0` **S1-03** Не-root пользователь в `backend/Dockerfile` и `Dockerfile.worker` (`USER 10001`), read-only FS где возможно
-- `[ ] P0` **S1-04** Gitleaks / trufflehog в CI и pre-commit (история уже содержит старый ключ — он ротирован)
-- `[ ] P1` **S1-05** Dependabot (pip + npm + docker + github-actions) и автоматические PR
-- `[ ] P1` **S1-06** Сканирование образов (Trivy) в CI, запрет HIGH/CRITICAL
-- `[ ] P1` **S1-07** Лимит пикселей/разрешения для загружаемых изображений (защита от decompression bomb), `MAX_IMAGE_PIXELS`
-- `[ ] P1` **S1-08** Per-user квота хранилища и число документов; логирование отказов
-- `[ ] P2` **S1-09** Audit log действий (загрузка/удаление/смена конспекта): кто, что, когда, IP
-- `[ ] P2` **S1-10** Verify email / password reset / блокировка после N неудачных логинов `[?]`
+- `[x] P0` **S1-01** Rate limiting (slowapi): login/register/refresh + chat, 429 с кодом `rate_limited`
+- `[x] P0` **S1-02** Access 15 мин + refresh 30 дней с ротацией, чёрный список jti в Redis, endpoint logout; фронт обновляет токен при 401
+- `[x] P0` **S1-03** `USER appuser` (uid 10001) в backend и OCR-образе
+- `[x] P0` **S1-04** Gitleaks в pre-commit и CI (сделано в S0)
+- `[x] P1` **S1-05** Dependabot для pip/npm/docker/github-actions
+- `[x] P1` **S1-06** Trivy filesystem scan (HIGH/CRITICAL) в CI
+- `[x] P1` **S1-07** `MAX_IMAGE_PIXELS` + `MAX_IMAGE_SIDE_PX`, проверка через Pillow `verify()`
+- `[x] P1` **S1-08** Квота 100 документов / 2 ГБ на пользователя
+- `[x] P2` **S1-09** Audit log (таблица `audit_logs`, эндпоинт `/auth/audit-log`)
+- `[~] P2` **S1-10** Блокировка после 5 неудачных логинов сделана; verify email / password reset отложены (нужен SMTP) `[?]`
 
-**Definition of Done:** threat model зафиксирован в `docs/security/`, все P0 закрыты, сканеры зелёные.
+**Definition of Done:** threat model — `docs/security/threat-model.md`; все P0 закрыты, сканеры зелёные. ✅
+
+> Остаток S1-10 и перевод токенов в httpOnly cookie перенесены в следующий цикл (нужна SMTP/инфраструктура и смена frontend-архитектуры).
 
 ---
 

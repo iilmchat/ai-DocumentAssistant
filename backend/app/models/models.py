@@ -92,6 +92,25 @@ class DocumentChunk(Base):
     __table_args__ = (Index("ix_document_chunks_search", "search_vector", postgresql_using="gin"),)
 
 
+class AuditLog(Base):
+    """S1: журнал действий пользователя (кто/что/когда/откуда)."""
+
+    __tablename__ = "audit_logs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    action = Column(String(64), nullable=False)
+    resource_type = Column(String(64), nullable=True)
+    resource_id = Column(String(64), nullable=True)
+    ip_address = Column(String(64), nullable=True)
+    details = Column(JSONB, nullable=True)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=text("CURRENT_TIMESTAMP"))
+    __table_args__ = (
+        Index("ix_audit_logs_user", "user_id"),
+        Index("ix_audit_logs_created", "created_at"),
+    )
+
+
 class SummaryVersion(Base):
     """Этап 7: история версий сгенерированного конспекта."""
 

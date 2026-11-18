@@ -67,8 +67,13 @@ def test_extract_text_and_pages_from_pdf():
 
 
 def test_validate_upload_png():
-    png = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
-    path = _temp_file(png, ".png")
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (10, 10), "white").save(buf, format="PNG")
+    path = _temp_file(buf.getvalue(), ".png")
     try:
         assert validate_upload(path) == "image/png"
     finally:

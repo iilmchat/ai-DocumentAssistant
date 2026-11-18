@@ -3,8 +3,9 @@ import os
 import re
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response, StreamingResponse
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -20,6 +21,7 @@ from app.schemas.schemas import (
     SummaryVersionResponse,
 )
 from app.services.ai_service import generate_document_summary
+from app.services.audit import log_action
 from app.services.export import ExportData, render_docx, render_markdown, render_pdf
 from app.services.file_validation import (
     IMAGE_MIMES,
@@ -41,6 +43,10 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 CHUNK_READ = 1024 * 1024  # 1 МБ — читаем файл на диск потоково, не держим в памяти
 
 
+def _client_ip(request: Request) -> str | None:
+    return request.client.host if request.client else None
+
+
 async def _get_owned_document(
     db: AsyncSession, document_id: uuid.UUID, user_id: uuid.UUID
 ) -> Document:
@@ -56,11 +62,24 @@ async def _get_owned_document(
 
 @router.post("/upload", response_model=DocumentResponse, status_code=201)
 async def upload_document(
+    request: Request,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     user = current_user
+
+    # S1: квоты на число документов и суммарный объём
+    count_res = await db.execute(
+        select(func.count()).select_from(Document).where(Document.user_id == user.id)
+    )
+    if (count_res.scalar() or 0) >= settings.MAX_DOCUMENTS_PER_USER:
+        raise HTTPException(status_code=429, detail="Достигнут лимит числа документов")
+    size_res = await db.execute(
+        select(func.coalesce(func.sum(Document.size_bytes), 0)).where(Document.user_id == user.id)
+    )
+    if (size_res.scalar() or 0) + (file.size or 0) > settings.MAX_STORAGE_BYTES_PER_USER:
+        raise HTTPException(status_code=413, detail="Превышена квота хранилища")
 
     file_ext = os.path.splitext(file.filename or "")[1].lower()
     file_name = f"{uuid.uuid4()}{file_ext}"
@@ -133,6 +152,15 @@ async def upload_document(
             page_count_estimate=page_count,
         )
         db.add(new_doc)
+        await log_action(
+            db,
+            user.id,
+            "document.upload",
+            resource_type="document",
+            resource_id=str(new_doc.id),
+            ip_address=_client_ip(request),
+            details={"filename": new_doc.title, "size_bytes": size, "mime_type": mime},
+        )
         await db.commit()
         await db.refresh(new_doc)
     except HTTPException:
@@ -233,6 +261,7 @@ async def document_pages(
 
 @router.delete("/{document_id}", status_code=204)
 async def delete_document(
+    request: Request,
     document_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -240,6 +269,14 @@ async def delete_document(
     doc = await _get_owned_document(db, document_id, current_user.id)
     if os.path.exists(doc.file_path):
         os.remove(doc.file_path)
+    await log_action(
+        db,
+        current_user.id,
+        "document.delete",
+        resource_type="document",
+        resource_id=str(doc.id),
+        ip_address=_client_ip(request),
+    )
     await db.delete(doc)
     await db.commit()
 
@@ -306,6 +343,7 @@ async def _collect_document_text(db: AsyncSession, doc_id: uuid.UUID) -> str:
 
 @router.post("/{document_id}/summarize", response_model=SummaryVersionResponse)
 async def regenerate_summary(
+    request: Request,
     document_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -318,12 +356,21 @@ async def regenerate_summary(
     summary = await generate_document_summary(full_text)
     doc.summary = summary
     version = await save_summary_version(db, doc.id, summary)
+    await log_action(
+        db,
+        current_user.id,
+        "summary.regenerate",
+        resource_type="document",
+        resource_id=str(doc.id),
+        ip_address=_client_ip(request),
+    )
     await db.commit()
     return version
 
 
 @router.post("/{document_id}/versions/{version_id}/restore", response_model=DocumentResponse)
 async def restore_summary_version(
+    request: Request,
     document_id: uuid.UUID,
     version_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -343,6 +390,15 @@ async def restore_summary_version(
     doc.summary = version.summary
     # история append-only: восстановление тоже фиксируется новой версией
     await save_summary_version(db, doc.id, version.summary)
+    await log_action(
+        db,
+        current_user.id,
+        "summary.restore",
+        resource_type="document",
+        resource_id=str(doc.id),
+        ip_address=_client_ip(request),
+        details={"restored_version": version.version},
+    )
     await db.commit()
     await db.refresh(doc)
     return doc

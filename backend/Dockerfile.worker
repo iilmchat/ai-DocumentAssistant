@@ -20,7 +20,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN mkdir -p /app/storage
+# S1: OCR-воркер тоже не должен быть root
+RUN useradd --create-home --uid 10001 appuser \
+    && mkdir -p /app/storage \
+    && chown -R appuser:appuser /app
+USER appuser
 
 CMD ["celery", "-A", "app.worker.celery_app", "worker", \
      "--loglevel=info", "-Q", "ocr", "--concurrency=1"]
