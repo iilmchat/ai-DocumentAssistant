@@ -1,28 +1,33 @@
 """Worker-пайплайн (Этапы 1, 3, 4).
 
 Две очереди:
-- default  — быстрые форматы (TXT, PDF с текстовым слоем);
+- default  — быстрые форматы (TXT, DOCX, PDF с текстовым слоем);
 - ocr      — документы со сканами, отдельный контейнер воркера, чтобы
              медленный OCR не блокировал очередь default.
 
 Обработка постраничная: каждая страница пишется в document_pages с
 extraction_method/confidence, прогресс processed_pages/total_pages
-обновляется в БД (фронт читает через SSE / поллинг). Идемпотентность по
-SHA-256 проверяется ещё на этапе загрузки (api/documents.py).
+обновляется в БД (фронт читает через SSE / поллинг).
 """
+
 import asyncio
 import os
 
 from celery import Celery
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from sqlalchemy import delete, func
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.future import select
-from sqlalchemy import delete
 
 from app.core.config import settings
-from app.models.models import Document, DocumentChunk, DocumentPage
+from app.models.models import Document, DocumentChunk, DocumentPage, SummaryVersion
+from app.services.ai_service import (
+    ensure_embedding_dim,
+    generate_document_summary,
+    generate_embeddings,
+)
 from app.services.document_parser import extract_text_from_file, split_text_into_chunks
-from app.services.text_extraction import extract_pages, chunk_pages
-from app.services.ai_service import generate_embeddings, generate_document_summary
+from app.services.file_validation import IMAGE_EXTENSIONS
+from app.services.text_extraction import chunk_pages, extract_pages, extract_pages_from_image
 
 celery_app = Celery(
     "worker",
@@ -43,22 +48,36 @@ engine = create_async_engine(settings.DATABASE_URL, future=True)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 
+async def save_summary_version(session, doc_id, summary: str) -> SummaryVersion:
+    """Этап 7: append-only история версий конспекта."""
+    result = await session.execute(
+        select(func.max(SummaryVersion.version)).where(SummaryVersion.document_id == doc_id)
+    )
+    next_version = (result.scalar() or 0) + 1
+    version = SummaryVersion(document_id=doc_id, version=next_version, summary=summary)
+    session.add(version)
+    await session.commit()
+    return version
+
+
 async def _embed_and_store_chunks(session, doc_id, chunks: list[dict]):
     batch_size = 50
     for i in range(0, len(chunks), batch_size):
-        batch = chunks[i:i + batch_size]
+        batch = chunks[i : i + batch_size]
         texts = [c["content"] for c in batch]
-        embeddings = await generate_embeddings(texts)
-        for idx, (c, emb) in enumerate(zip(batch, embeddings)):
-            session.add(DocumentChunk(
-                document_id=doc_id,
-                chunk_index=i + idx,
-                content=c["content"],
-                embedding=emb,
-                page_numbers=c.get("page_numbers"),
-                headings=c.get("headings"),
-                extraction_method=c.get("extraction_method"),
-            ))
+        embeddings = [ensure_embedding_dim(emb) for emb in await generate_embeddings(texts)]
+        for idx, (chunk, emb) in enumerate(zip(batch, embeddings, strict=True)):
+            session.add(
+                DocumentChunk(
+                    document_id=doc_id,
+                    chunk_index=i + idx,
+                    content=chunk["content"],
+                    embedding=emb,
+                    page_numbers=chunk.get("page_numbers"),
+                    headings=chunk.get("headings"),
+                    extraction_method=chunk.get("extraction_method"),
+                )
+            )
         await session.commit()
 
 
@@ -76,22 +95,30 @@ async def async_process_document(document_id: str, file_path: str):
             await session.commit()
 
             chunks: list[dict] = []
+            pages = None
 
             if ext == ".pdf":
                 # Этап 1: гибридное постраничное извлечение (текстовый слой или OCR)
                 pages = await asyncio.to_thread(extract_pages, file_path)
+            elif ext in IMAGE_EXTENSIONS:
+                # Изображение (JPG/PNG/TIFF) — одна страница, всегда через OCR
+                pages = await asyncio.to_thread(extract_pages_from_image, file_path)
+
+            if pages is not None:
                 doc.total_pages = len(pages)
                 doc.processed_pages = 0
                 await session.commit()
 
                 for p in pages:
-                    session.add(DocumentPage(
-                        document_id=doc.id,
-                        page_number=p.page_number,
-                        text=p.text,
-                        extraction_method=p.extraction_method,
-                        confidence=int(round(p.confidence * 100)),
-                    ))
+                    session.add(
+                        DocumentPage(
+                            document_id=doc.id,
+                            page_number=p.page_number,
+                            text=p.text,
+                            extraction_method=p.extraction_method,
+                            confidence=int(round(p.confidence * 100)),
+                        )
+                    )
                     doc.processed_pages = p.page_number
                     # коммитим каждую страницу — фронт видит живой прогресс
                     await session.commit()
@@ -100,12 +127,17 @@ async def async_process_document(document_id: str, file_path: str):
                 chunks = await asyncio.to_thread(chunk_pages, pages)
                 full_text = "\n\n".join(p.text for p in pages)
             else:
-                # TXT / DOCX — старый путь, без постраничности
+                # TXT / DOCX — путь без постраничности
                 full_text = await asyncio.to_thread(extract_text_from_file, file_path, ext)
                 chunk_texts = split_text_into_chunks(full_text)
                 chunks = [
-                    {"content": t, "page_numbers": [], "extraction_method": "text_layer", "headings": []}
-                    for t in chunk_texts
+                    {
+                        "content": text,
+                        "page_numbers": [],
+                        "extraction_method": "text_layer",
+                        "headings": [],
+                    }
+                    for text in chunk_texts
                 ]
                 doc.total_pages = 1
                 doc.processed_pages = 1
@@ -121,7 +153,9 @@ async def async_process_document(document_id: str, file_path: str):
             if chunks:
                 await _embed_and_store_chunks(session, doc.id, chunks)
 
-            doc.summary = await generate_document_summary(full_text)
+            summary = await generate_document_summary(full_text)
+            doc.summary = summary
+            await save_summary_version(session, doc.id, summary)
             doc.status = "completed"
             await session.commit()
             print(f"Документ {document_id} обработан: {len(chunks)} чанков.")
@@ -138,7 +172,7 @@ def process_document_task(self, document_id: str, file_path: str):
     try:
         asyncio.run(async_process_document(document_id, file_path))
     except Exception as exc:
-        raise self.retry(exc=exc, countdown=30)
+        raise self.retry(exc=exc, countdown=30) from exc
 
 
 @celery_app.task(name="process_scanned_document_task", bind=True, max_retries=2)
@@ -147,4 +181,4 @@ def process_scanned_document_task(self, document_id: str, file_path: str):
     try:
         asyncio.run(async_process_document(document_id, file_path))
     except Exception as exc:
-        raise self.retry(exc=exc, countdown=120)
+        raise self.retry(exc=exc, countdown=120) from exc

@@ -1,44 +1,41 @@
-import React, { useState, useEffect } from 'react';
-import { BookOpen, MessageSquare, FileText, AlertCircle } from 'lucide-react';
-import { useDocuments } from './hooks/useDocuments';
-import { useDocumentChat } from './hooks/useDocumentChat';
-import { Sidebar } from './components/Sidebar';
-import { SummaryViewer } from './components/SummaryViewer';
-import { ChatPanel } from './components/ChatPanel';
+import React, { useState, useEffect } from 'react'
+import { BookOpen, MessageSquare, FileText, AlertCircle, LogOut } from 'lucide-react'
+import { useDocuments } from './hooks/useDocuments'
+import { useDocumentChat } from './hooks/useDocumentChat'
+import { useAuth } from './hooks/useAuth'
+import { AuthForm } from './components/AuthForm'
+import { UserInfo } from './types'
+import { Sidebar } from './components/Sidebar'
+import { SummaryViewer } from './components/SummaryViewer'
+import { ChatPanel } from './components/ChatPanel'
 
-type ActiveTab = 'summary' | 'chat';
+type ActiveTab = 'summary' | 'chat'
 
-export function App() {
-  const {
-    documents,
-    isLoading,
-    isUploading,
-    error,
-    uploadFile,
-    removeDocument,
-  } = useDocuments();
+function MainApp({ user, onLogout }: { user: UserInfo; onLogout: () => void }) {
+  const { documents, isLoading, isUploading, error, uploadFile, removeDocument, refresh } =
+    useDocuments()
 
-  const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<ActiveTab>('summary');
+  const [selectedDocId, setSelectedDocId] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<ActiveTab>('summary')
 
   useEffect(() => {
     if (!selectedDocId && documents.length > 0) {
-      setSelectedDocId(documents[0].id);
+      setSelectedDocId(documents[0].id)
     } else if (selectedDocId && !documents.some((d) => d.id === selectedDocId)) {
-      setSelectedDocId(documents.length > 0 ? documents[0].id : null);
+      setSelectedDocId(documents.length > 0 ? documents[0].id : null)
     }
-  }, [documents, selectedDocId]);
+  }, [documents, selectedDocId])
 
-  const selectedDoc = documents.find((d) => d.id === selectedDocId) || null;
-  const { messages, isSending, sendMessage, stopGeneration } = useDocumentChat(selectedDocId);
+  const selectedDoc = documents.find((d) => d.id === selectedDocId) || null
+  const { messages, isSending, sendMessage, stopGeneration } = useDocumentChat(selectedDocId)
 
   const handleUpload = async (file: File) => {
-    const uploaded = await uploadFile(file);
+    const uploaded = await uploadFile(file)
     if (uploaded) {
-      setSelectedDocId(uploaded.id);
-      setActiveTab('summary');
+      setSelectedDocId(uploaded.id)
+      setActiveTab('summary')
     }
-  };
+  }
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row bg-slate-50 text-slate-900">
@@ -69,7 +66,8 @@ export function App() {
               Выберите или загрузите документ
             </h2>
             <p className="text-sm text-slate-500 max-w-md mt-1">
-              Загрузите PDF, DOCX или TXT файл в меню слева, чтобы автоматически получить его умный конспект и задать вопросы в RAG-чате.
+              Загрузите PDF, DOCX или TXT файл в меню слева, чтобы автоматически получить его умный
+              конспект и задать вопросы в RAG-чате.
             </p>
           </div>
         ) : (
@@ -79,6 +77,18 @@ export function App() {
                 <h2 className="text-base md:text-lg font-semibold text-slate-900 truncate">
                   {selectedDoc.title}
                 </h2>
+                <div className="flex items-center gap-3 shrink-0">
+                  <span className="text-xs text-slate-500 hidden md:inline" title={user.email}>
+                    {user.email}
+                  </span>
+                  <button
+                    onClick={onLogout}
+                    title="Выйти"
+                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md"
+                  >
+                    <LogOut className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
 
               <div className="flex gap-6">
@@ -110,7 +120,7 @@ export function App() {
 
             <div className="flex-1 overflow-y-auto">
               {activeTab === 'summary' ? (
-                <SummaryViewer document={selectedDoc} />
+                <SummaryViewer document={selectedDoc} onUpdated={refresh} />
               ) : (
                 <ChatPanel
                   documentTitle={selectedDoc.title}
@@ -126,7 +136,25 @@ export function App() {
         )}
       </main>
     </div>
-  );
+  )
 }
 
-export default App;
+export function App() {
+  const { user, isLoading, refresh, logout } = useAuth()
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-slate-500 text-sm">
+        Загрузка...
+      </div>
+    )
+  }
+
+  if (!user) {
+    return <AuthForm onAuthenticated={refresh} />
+  }
+
+  return <MainApp user={user} onLogout={logout} />
+}
+
+export default App

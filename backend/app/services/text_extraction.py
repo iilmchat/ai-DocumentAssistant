@@ -7,19 +7,21 @@
 - Чанкинг по семантическим границам (заголовки/абзацы), таблицы конвертируются в Markdown
   и не разрываются между чанками; повторяющиеся колонтитулы дедуплицируются.
 """
+
 import re
 from dataclasses import dataclass, field
 
 from app.core.config import settings
-from app.services.ocr import PageResult, get_ocr_engine
+from app.services.ocr import get_ocr_engine
 
 
 @dataclass
 class StructuredBlock:
     """Семантический блок страницы: абзац, заголовок, список или таблица."""
-    kind: str            # heading | paragraph | list | table
+
+    kind: str  # heading | paragraph | list | table
     text: str
-    heading_path: str = ""   # "Раздел 1 > Подраздел 1.2" — для контекста чанка
+    heading_path: str = ""  # "Раздел 1 > Подраздел 1.2" — для контекста чанка
     page_number: int = 1
 
 
@@ -38,6 +40,7 @@ class PageExtraction:
 # ---------------------------------------------------------------------------
 # Гибридное извлечение (Этап 1)
 # ---------------------------------------------------------------------------
+
 
 def _page_text_coverage(page) -> float:
     """Доля площади страницы, покрытая текстовыми блоками (0..1)."""
@@ -61,7 +64,6 @@ def _is_full_page_image(page) -> bool:
             return False
         rect = page.rect
         for img in images:
-            xref = img[0]
             try:
                 bbox = page.get_image_bbox(img)
             except Exception:
@@ -88,7 +90,7 @@ def needs_ocr(page, min_chars: int) -> bool:
 
 def extract_pages(pdf_path: str) -> list[PageExtraction]:
     """Постранично: текстовый слой или OCR. Возвращает блоки со структурой."""
-    import fitz  # PyMuPDF
+    from app.services.pymupdf_compat import fitz
 
     engine = get_ocr_engine(settings.OCR_ENGINE)
     results: list[PageExtraction] = []
@@ -102,12 +104,14 @@ def extract_pages(pdf_path: str) -> list[PageExtraction]:
             if needs_ocr(page, settings.OCR_MIN_CHARS_PER_PAGE):
                 try:
                     text, conf = engine.ocr_pdf_page(pdf_path, idx)
-                    results.append(PageExtraction(
-                        page_number=page_no,
-                        blocks=_plain_to_blocks(text, page_no),
-                        extraction_method="ocr",
-                        confidence=conf,
-                    ))
+                    results.append(
+                        PageExtraction(
+                            page_number=page_no,
+                            blocks=_plain_to_blocks(text, page_no),
+                            extraction_method="ocr",
+                            confidence=conf,
+                        )
+                    )
                     continue
                 except Exception as e:
                     # OCR недоступен/упал — падаем обратно на текстовый слой
@@ -116,15 +120,34 @@ def extract_pages(pdf_path: str) -> list[PageExtraction]:
             blocks = _parse_page_structure(page, page_no)
             raw_len = len(re.sub(r"\s+", "", page.get_text("text") or ""))
             conf = 1.0 if raw_len else 0.0
-            results.append(PageExtraction(
-                page_number=page_no, blocks=blocks,
-                extraction_method="text_layer", confidence=conf,
-            ))
+            results.append(
+                PageExtraction(
+                    page_number=page_no,
+                    blocks=blocks,
+                    extraction_method="text_layer",
+                    confidence=conf,
+                )
+            )
     finally:
         doc.close()
 
     _dedup_repeated_headers(results)
     return results
+
+
+def extract_pages_from_image(image_path: str) -> list[PageExtraction]:
+    """Этап 1: JPG/PNG/TIFF распознаётся целиком как одна страница."""
+    engine = get_ocr_engine(settings.OCR_ENGINE)
+    text, conf = engine.ocr_image_file(image_path)
+    method = "vision" if settings.OCR_ENGINE == "vision" else "ocr"
+    return [
+        PageExtraction(
+            page_number=1,
+            blocks=_plain_to_blocks(text, 1),
+            extraction_method=method,
+            confidence=conf,
+        )
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -133,8 +156,10 @@ def extract_pages(pdf_path: str) -> list[PageExtraction]:
 
 _LIST_RE = re.compile(r"^\s*((?:[-•▪◦*])|(\d+[.)]?)|(?:[а-яa-z]{1,3}[.)]))\s+")
 
+
 def _looks_like_list_line(line: str) -> bool:
     return bool(_LIST_RE.match(line))
+
 
 def _font_size_of_block(block) -> float:
     """Максимальный размер шрифта в текстовом блоке."""
@@ -146,6 +171,7 @@ def _font_size_of_block(block) -> float:
     except Exception:
         pass
     return max(sizes) if sizes else 0.0
+
 
 def _block_text_from_dict(block: dict) -> str:
     lines = []
@@ -162,8 +188,7 @@ def _table_to_markdown(table: list[list[str]]) -> str:
         return ""
     ncols = max(len(r) for r in rows)
     rows = [r + [""] * (ncols - len(r)) for r in rows]
-    md = ["| " + " | ".join(rows[0]) + " |",
-          "|" + "---|" * ncols]
+    md = ["| " + " | ".join(rows[0]) + " |", "|" + "---|" * ncols]
     for r in rows[1:]:
         md.append("| " + " | ".join(r) + " |")
     return "\n".join(md)
@@ -189,8 +214,12 @@ def _parse_page_structure(page, page_no: int) -> list[StructuredBlock]:
     data = page.get_text("dict")
     # медианный размер шрифта как базовый
     all_sizes = sorted(
-        s["size"] for b in data["blocks"] if b["type"] == 0
-        for l in b["lines"] for s in l["spans"] if s["text"].strip()
+        s["size"]
+        for b in data["blocks"]
+        if b["type"] == 0
+        for line in b["lines"]
+        for s in line["spans"]
+        if s["text"].strip()
     )
     base_size = all_sizes[len(all_sizes) // 2] if all_sizes else 11.0
 
@@ -230,9 +259,11 @@ def _plain_to_blocks(text: str, page_no: int) -> list[StructuredBlock]:
 # Дедупликация колонтитулов (Этап 3)
 # ---------------------------------------------------------------------------
 
+
 def _dedup_repeated_headers(pages: list[PageExtraction]) -> None:
     """Блоки, повторяющиеся (нормализованно) на >=60% страниц, удаляем везде."""
     from collections import Counter
+
     counter: Counter[str] = Counter()
     total = max(len(pages), 1)
     for p in pages:
@@ -246,15 +277,13 @@ def _dedup_repeated_headers(pages: list[PageExtraction]) -> None:
     if not repeated:
         return
     for p in pages:
-        p.blocks = [
-            b for b in p.blocks
-            if re.sub(r"\W+", "", b.text.lower())[:80] not in repeated
-        ]
+        p.blocks = [b for b in p.blocks if re.sub(r"\W+", "", b.text.lower())[:80] not in repeated]
 
 
 # ---------------------------------------------------------------------------
 # Семантический чанкинг (Этап 3) + обратные ссылки на страницы (Этап 1)
 # ---------------------------------------------------------------------------
+
 
 def build_heading_paths(pages: list[PageExtraction]) -> None:
     """Проставляем каждому блоку heading_path вида 'Раздел > Подраздел'."""
@@ -291,13 +320,21 @@ def chunk_pages(
         if current_len > 0:
             text = "\n\n".join(current_parts).strip()
             if text:
-                chunks.append({
-                    "content": text,
-                    "page_numbers": sorted(current_pages),
-                    "extraction_method": ",".join(sorted(current_methods)) or "text_layer",
-                    "headings": sorted(current_headings)[:5],
-                })
-        current_parts, current_len, current_pages, current_methods, current_headings = [], 0, set(), set(), set()
+                chunks.append(
+                    {
+                        "content": text,
+                        "page_numbers": sorted(current_pages),
+                        "extraction_method": ",".join(sorted(current_methods)) or "text_layer",
+                        "headings": sorted(current_headings)[:5],
+                    }
+                )
+        current_parts, current_len, current_pages, current_methods, current_headings = (
+            [],
+            0,
+            set(),
+            set(),
+            set(),
+        )
 
     for p in pages:
         for b in p.blocks:
@@ -325,5 +362,7 @@ def chunk_pages(
             head = chunks[i]["content"][:40]
             if tail.strip() and not head.startswith(tail[-20:].strip()):
                 chunks[i]["content"] = "...(продолжение)\n" + tail + "\n\n" + chunks[i]["content"]
-                chunks[i]["page_numbers"] = sorted(set(chunks[i]["page_numbers"]) | set(chunks[i - 1]["page_numbers"]))
+                chunks[i]["page_numbers"] = sorted(
+                    set(chunks[i]["page_numbers"]) | set(chunks[i - 1]["page_numbers"])
+                )
     return chunks

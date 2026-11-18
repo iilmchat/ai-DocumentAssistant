@@ -4,6 +4,7 @@
 чтобы движок можно было менять per-document (Tesseract baseline,
 при необходимости PaddleOCR / Surya / vision-модель).
 """
+
 import shutil
 import subprocess
 from abc import ABC, abstractmethod
@@ -13,22 +14,50 @@ from dataclasses import dataclass
 @dataclass
 class PageResult:
     """Постраничный результат извлечения (Этап 1)."""
-    page_number: int          # 1-based
+
+    page_number: int  # 1-based
     text: str
-    extraction_method: str    # "text_layer" | "ocr" | "vision"
-    confidence: float         # 0..1
+    extraction_method: str  # "text_layer" | "ocr" | "vision"
+    confidence: float  # 0..1
 
 
 class OCREngine(ABC):
     """Абстрактный интерфейс OCR-движка. Реализации меняются через настройки."""
 
     @abstractmethod
-    def available(self) -> bool:
-        ...
+    def available(self) -> bool: ...
 
     @abstractmethod
     def ocr_pdf_page(self, pdf_path: str, page_index: int) -> tuple[str, float]:
         """Распознать одну страницу PDF (0-based). Возвращает (текст, confidence 0..1)."""
+
+    def ocr_image_file(self, image_path: str) -> tuple[str, float]:
+        """Распознать файл изображения (JPG/PNG/TIFF) как одну страницу.
+
+        Универсальная реализация: переводим изображение в одностраничный PDF
+        через Pillow и используем уже существующий ocr_pdf_page. Работает и для
+        Tesseract, и для vision-модели.
+        """
+        import io
+        import os
+        import tempfile
+
+        from PIL import Image
+
+        with Image.open(image_path) as img:
+            prepared = img if img.mode in ("RGB", "L") else img.convert("RGB")
+            buf = io.BytesIO()
+            prepared.save(buf, format="PDF")
+            image_bytes = buf.getvalue()
+
+        fd, pdf_path = tempfile.mkstemp(suffix=".pdf")
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(image_bytes)
+            return self.ocr_pdf_page(pdf_path, 0)
+        finally:
+            if os.path.exists(pdf_path):
+                os.unlink(pdf_path)
 
 
 class TesseractEngine(OCREngine):
@@ -45,7 +74,7 @@ class TesseractEngine(OCREngine):
         return shutil.which("tesseract") is not None
 
     def ocr_pdf_page(self, pdf_path: str, page_index: int) -> tuple[str, float]:
-        import fitz  # PyMuPDF
+        from app.services.pymupdf_compat import fitz
 
         doc = fitz.open(pdf_path)
         try:
@@ -56,9 +85,10 @@ class TesseractEngine(OCREngine):
             doc.close()
 
         try:
+            import io
+
             import pytesseract
             from PIL import Image
-            import io
 
             img = Image.open(io.BytesIO(image_bytes))
             data = pytesseract.image_to_data(
@@ -66,7 +96,7 @@ class TesseractEngine(OCREngine):
             )
             words: list[str] = []
             confs: list[float] = []
-            for word, conf in zip(data["text"], data["conf"]):
+            for word, conf in zip(data["text"], data["conf"], strict=False):
                 word = (word or "").strip()
                 if not word:
                     continue
@@ -83,7 +113,8 @@ class TesseractEngine(OCREngine):
             return text, round(confidence, 3)
         except ImportError:
             # pytesseract недоступен — зовём бинарь tesseract напрямую
-            import tempfile, os
+            import os
+            import tempfile
 
             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
                 tmp.write(image_bytes)
@@ -91,7 +122,9 @@ class TesseractEngine(OCREngine):
             try:
                 proc = subprocess.run(
                     ["tesseract", tmp_path, "stdout", "-l", self.LANGUAGES, "--psm", "3"],
-                    capture_output=True, text=True, timeout=120,
+                    capture_output=True,
+                    text=True,
+                    timeout=120,
                 )
                 if proc.returncode != 0:
                     raise RuntimeError(f"tesseract failed: {proc.stderr[:300]}")
@@ -102,10 +135,84 @@ class TesseractEngine(OCREngine):
                 os.unlink(tmp_path)
 
 
+class VisionEngine(OCREngine):
+    """Современный вариант из roadmap: vision-модель (gpt-4o / gemini) по страницам PDF.
+
+    Работает через OpenAI-совместимый эндпоинт, поэтому подходит и для Gemini
+    (OPENAI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/).
+    Метод синхронный по контракту OCREngine — вызывается в потоке через asyncio.to_thread.
+    """
+
+    def __init__(self, model: str | None = None):
+        from app.core.config import settings
+
+        self.model = model or settings.LLM_MODEL
+        self.api_key = settings.OPENAI_API_KEY
+        self.base_url = settings.OPENAI_BASE_URL
+
+    def available(self) -> bool:
+        return bool(self.api_key)
+
+    def ocr_pdf_page(self, pdf_path: str, page_index: int) -> tuple[str, float]:
+        import asyncio
+        import base64
+        import io
+
+        from openai import AsyncOpenAI
+        from PIL import Image
+
+        from app.services.pymupdf_compat import fitz
+
+        doc = fitz.open(pdf_path)
+        try:
+            page = doc.load_page(page_index)
+            pix = page.get_pixmap(dpi=150)
+            image_bytes = pix.tobytes("png")
+        finally:
+            doc.close()
+
+        # сжимаем до разумного размера, чтобы не раздувать запрос
+        img = Image.open(io.BytesIO(image_bytes))
+        img.thumbnail((1600, 1600))
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+
+        async def _call() -> str:
+            client = AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
+            response = await client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "Извлеки весь текст с этой страницы документа максимально точно. Сохраняй абзацы и структуру. Верни только текст без комментариев.",
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": f"data:image/png;base64,{b64}"},
+                            },
+                        ],
+                    }
+                ],
+                temperature=0.1,
+            )
+            return response.choices[0].message.content or ""
+
+        text = asyncio.run(_call()).strip()
+        return text, (0.85 if text else 0.0)
+
+
 def get_ocr_engine(name: str | None = None) -> OCREngine:
-    """Фабрика движков. Этап 2: интерфейс абстрактный, реализацию выбираем настройкой."""
-    name = (name or "tesseract").lower()
+    """Фабрика движков: tesseract (baseline) или vision (gpt-4o / gemini)."""
+    from app.core.config import settings
+
+    name = (name or settings.OCR_ENGINE or "tesseract").lower()
     if name == "tesseract":
-        return TesseractEngine()
-    # сюда позже добавляются paddle / surya / vision — per-document переключение
+        return TesseractEngine(settings.OCR_LANGUAGES)
+    if name == "vision":
+        return VisionEngine()
+    # сюда позже добавляются paddle / surya — per-document переключение
     raise ValueError(f"Неизвестный OCR-движок: {name}")

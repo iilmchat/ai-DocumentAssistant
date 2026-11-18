@@ -1,2 +1,27 @@
+# Окружение / секреты
 .env
-.env.local
+.env.*
+!.env.example
+backend/.env
+frontend/.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+
+# Node / frontend
+node_modules/
+frontend/dist/
+frontend/playwright-report/
+frontend/test-results/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store

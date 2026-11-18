@@ -3,6 +3,7 @@
 Безопасность: MIME определяем по СОДЕРЖИМОМУ (magic bytes), а не по расширению;
 ограничиваем размер; для DOCX защищаемся от ZIP-бомб лимитом распаковки.
 """
+
 import hashlib
 import os
 import zipfile
@@ -12,6 +13,10 @@ from app.core.config import settings
 # сигнатуры форматов
 _MAGIC = {
     b"%PDF-": "application/pdf",
+    b"\xff\xd8\xff": "image/jpeg",
+    b"\x89PNG\r\n\x1a\n": "image/png",
+    b"II*\x00": "image/tiff",
+    b"MM\x00*": "image/tiff",
 }
 
 
@@ -59,7 +64,14 @@ ALLOWED_MIMES = {
     "application/pdf": ".pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
     "text/plain": ".txt",
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/tiff": ".tiff",
 }
+
+# Изображения распознаются целиком как одна страница и идут в OCR-очередь
+IMAGE_MIMES = {"image/jpeg", "image/png", "image/tiff"}
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tiff", ".tif"}
 
 
 class ValidationError(Exception):
@@ -84,7 +96,8 @@ def validate_upload(file_path: str) -> str:
 
 def count_pdf_pages(path: str) -> int | None:
     try:
-        import fitz
+        from app.services.pymupdf_compat import fitz
+
         doc = fitz.open(path)
         try:
             return doc.page_count

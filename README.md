@@ -1,28 +1,48 @@
-# AI Document Assistant
+# AI Document Assistant («AI Конспект»)
 
-Приложение для автоматического конспектирования документов (PDF, DOCX, TXT) и интерактивного RAG-чата по их содержимому.
+Веб-приложение для автоматического анализа документов (PDF, DOCX, TXT), генерации структурированных конспектов и ответов на вопросы по содержимому файлов в режиме RAG-чата (Retrieval-Augmented Generation).
 
-## Быстрый запуск через Docker Compose
+## Основные возможности
 
-1. Создайте файл `backend/.env` на основе `backend/.env.example` и впишите свой ключ `OPENAI_API_KEY`:
+- **Загрузка документов:** `.pdf`, `.docx`, `.txt`, а также изображения `.jpg`, `.png`, `.tiff` с проверкой MIME по содержимому (magic bytes) и защитой от ZIP-бомб.
+- **Гибридное извлечение (Этап 1):** текстовый слой PDF через PyMuPDF, а страницы-сканы уходят в OCR (Tesseract или vision-модель). Постраничное хранение с меткой метода и confidence.
+- **Семантический чанкинг (Этап 3):** разбивка по заголовкам/абзацам/таблицам с сохранением `heading_path`, ссылками на страницы и дедупликацией колонтитулов.
+- **Умный конспект:** Map/Reduce-суммаризация больших документов.
+- **RAG-чат с цитатами (Этапы 1 и 5):** гибридный поиск pgvector + PostgreSQL FTS (russian) с Reciprocal Rank Fusion; ответ сопровождается ссылками на страницы.
+- **Асинхронная индексация:** две очереди Celery (быстрая и OCR) + Redis, живой прогресс через SSE/поллинг.
+- **Многопользовательскость (Этап 4):** JWT-регистрация/логин, документы изолированы по владельцу.
+- **Идемпотентность:** повторная загрузка того же файла (SHA-256) не пересчитывает OCR и эмбеддинги.
+
+## Технологический стек
+
+- **Frontend:** React 18, TypeScript, Vite, Tailwind CSS, Nginx
+- **Backend:** Python 3.11, FastAPI, SQLAlchemy (async), Pydantic
+- **Очереди задач:** Celery, Redis
+- **База данных:** PostgreSQL 16 + `pgvector` + полнотекстовый индекс
+- **AI / LLM:** любой OpenAI-совместимый провайдер (OpenAI, Gemini, OpenRouter, Groq, Ollama)
+
+## Быстрый запуск
+
+1. Скопируйте `backend/.env.example` в `backend/.env` и укажите `OPENAI_API_KEY` (для Gemini также `OPENAI_BASE_URL`, `LLM_MODEL` и `EMBEDDING_DIM=768`):
    ```bash
    cp backend/.env.example backend/.env
    ```
-2. Запустите весь стек одной командой из корня проекта:
+2. Запустите стек (миграции Alembic применяются автоматически при старте backend):
    ```bash
    docker compose up --build -d
    ```
-3. Откройте в браузере:
+3. Откройте:
    - **Веб-интерфейс:** http://localhost
-   - **Swagger API документация:** http://localhost:8000/docs
+   - **Swagger API:** http://localhost:8000/docs
 
+Подробная документация — в директории [`docs/`](./docs/README.md). План улучшений по best practices (спринты, приоритеты, статусы) — в [`TODO.md`](./TODO.md).
 
 ## Известные проблемы и что было исправлено
 
 - **pgvector**: в `models.py` использовался несуществующий класс `VECTOR` — заменён на `Vector` из `pgvector.sqlalchemy`.
-- **PyPDF2** устарел и не читает современные PDF — заменён на `pypdf` (в `document_parser.py` и `requirements.txt`).
-- **httpx/openai**: добавлен пин `httpx==0.27.0`, чтобы исключить конфликт `proxies` с новыми версиями httpx.
-- **Путь к хранилищу**: путь к файлам был жёстко зашит как относительный `"storage"`, из-за чего backend и worker в Docker могли писать в разные места. Добавлена настройка `UPLOAD_DIR` (по умолчанию `/app/storage` в контейнерах), проброшенная через `docker-compose.yml`.
+- **PyPDF2** устарел и не читает современные PDF — заменён на `pypdf` / `PyMuPDF`.
+- **httpx/openai**: зафиксирован `httpx==0.27.0`, чтобы исключить конфликт `proxies` с новыми версиями httpx.
+- **Путь к хранилищу**: путь к файлам был жёстко зашит как относительный `"storage"` — добавлена настройка `UPLOAD_DIR` (`/app/storage` в контейнерах).
 - Удалён пустой мусорный `package-lock.json` в корне репозитория.
 
 ## Дальнейшее развитие (roadmap)
@@ -37,3 +57,23 @@
 6. **Стриминг ответов LLM** (SSE) вместо имитации «печатной машинки» на фронте.
 7. **Экспорт конспектов** (Markdown/PDF/DOCX) и история версий документа.
 8. **Тесты и CI** — pytest для backend, базовые e2e-тесты фронта.
+
+> Статус: все пункты roadmap реализованы (1 — включая JPG/PNG/TIFF; 7 — экспорт MD/DOCX/PDF и история версий; 8 — pytest + e2e + GitHub Actions CI).
+
+## Тесты и проверки
+
+Все проверки S0 (ruff, mypy, pytest + coverage, pip-audit, ESLint/Prettier, build, npm audit):
+```bash
+make check
+```
+
+Отдельно:
+```bash
+# Backend
+cd backend && python -m pytest -q
+
+# Frontend (e2e, после npm run build)
+cd frontend && npm run test:e2e
+```
+
+CI (GitHub Actions) при каждом push/PR в `main` прогоняет pytest, сборку фронтенда и smoke e2e-тесты. Для PDF-экспорта на хосте нужен TTF-шрифт с кириллицей (`EXPORT_FONT` или системный DejaVu/Arial); в Docker он ставится через `fonts-dejavu-core`.

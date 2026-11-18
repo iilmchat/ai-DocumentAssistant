@@ -1,20 +1,21 @@
-version: '3.8'
-
+# Параметры БД/секретов задаются в корневом .env (не коммитится).
+# Примеры — в backend/.env.example.
 services:
   db:
     image: pgvector/pgvector:pg16
     container_name: ai_postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: ai_documents
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-ai_documents}
     ports:
-      - "5432:5432"
+      # Только локальный хост — не открываем БД наружу
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d ai_documents"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-ai_documents}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -24,7 +25,7 @@ services:
     container_name: ai_redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -40,9 +41,11 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/ai_documents
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-ai_documents}"
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:-super_secret_key_change_me_in_production}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
       UPLOAD_DIR: /app/storage
     ports:
       - "8000:8000"
@@ -60,14 +63,14 @@ services:
       dockerfile: Dockerfile
     container_name: ai_celery_worker
     restart: unless-stopped
-    # Этап 4: обычный воркер слушает только default-очередь
     command: celery -A app.worker.celery_app worker --loglevel=info -Q default --concurrency=2
     env_file:
       - ./backend/.env
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/ai_documents
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-ai_documents}"
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
+      SECRET_KEY: ${SECRET_KEY:-super_secret_key_change_me_in_production}
       UPLOAD_DIR: /app/storage
     volumes:
       - shared_storage:/app/storage
@@ -77,8 +80,6 @@ services:
       redis:
         condition: service_healthy
 
-  # Этапы 2 и 4: отдельный контейнер воркера под OCR (Tesseract + ocrmypdf).
-  # Медленные сканы не блокируют быстрые TXT/PDF из очереди default.
   ocr-worker:
     build:
       context: ./backend
@@ -89,9 +90,10 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/ai_documents
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-ai_documents}"
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
+      SECRET_KEY: ${SECRET_KEY:-super_secret_key_change_me_in_production}
       UPLOAD_DIR: /app/storage
       OCR_ENGINE: tesseract
     volumes:
@@ -99,7 +101,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 2g   # Tesseract/OCRmypdf жрут память на больших сканах
+          memory: 2g
     depends_on:
       db:
         condition: service_healthy
@@ -117,7 +119,8 @@ services:
     ports:
       - "80:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_started
 
 volumes:
   postgres_data:
