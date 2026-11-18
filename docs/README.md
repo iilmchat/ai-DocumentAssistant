@@ -16,6 +16,7 @@
    - [Устранение неполадок (Troubleshooting)](operations/troubleshooting.md)
    - [SLO и runbook наблюдаемости](operations/runbook.md)
    - [Нагрузочное тестирование](operations/load-test.md)
+   - [Backup и Restore](operations/backup-restore.md)
 5. **Безопасность (`/docs/security/`)**
    - [Управление ключами и доступом](security/security-overview.md)
    - [Threat model](security/threat-model.md)

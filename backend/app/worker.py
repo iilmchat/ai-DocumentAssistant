@@ -32,6 +32,7 @@ from app.services.ai_service import (
 )
 from app.services.document_parser import extract_text_from_file, split_text_into_chunks
 from app.services.file_validation import IMAGE_EXTENSIONS
+from app.services.retention import cleanup_retention
 from app.services.text_extraction import chunk_pages, extract_pages, extract_pages_from_image
 
 configure_logging()
@@ -51,6 +52,13 @@ celery_app.conf.task_routes = {
 celery_app.conf.worker_prefetch_multiplier = 1
 celery_app.conf.task_acks_late = True
 celery_app.conf.task_time_limit = settings.PARSE_TIMEOUT_SECONDS * 4
+# S4: ежедневная уборка (запускается отдельным контейнером celery beat)
+celery_app.conf.beat_schedule = {
+    "cleanup-retention-daily": {
+        "task": "cleanup_retention_task",
+        "schedule": 86400.0,
+    }
+}
 
 engine = create_async_engine(
     settings.DATABASE_URL,
@@ -181,6 +189,18 @@ async def async_process_document(document_id: str, file_path: str):
                 doc.status = "failed"
                 await session.commit()
             raise
+
+
+@celery_app.task(name="cleanup_retention_task")
+def cleanup_retention_task() -> None:
+    """S4: ежедневная очистка просроченных документов, версий и аудита."""
+    import asyncio
+
+    async def _run():
+        async with AsyncSessionLocal() as session:
+            await cleanup_retention(session)
+
+    asyncio.run(_run())
 
 
 @celery_app.task(name="dead_letter_task")

@@ -48,6 +48,8 @@ class Document(Base):
     processed_pages = Column(Integer, nullable=False, default=0)
     page_count_estimate = Column(Integer, nullable=True)
     created_at = Column(TIMESTAMP(timezone=True), server_default=text("CURRENT_TIMESTAMP"))
+    # S4: мягкое удаление — файл живёт grace-период, потом очищается retention-задачей
+    deleted_at = Column(TIMESTAMP(timezone=True), nullable=True)
 
 
 class DocumentPage(Base):

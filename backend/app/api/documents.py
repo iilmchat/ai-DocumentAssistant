@@ -3,6 +3,7 @@ import json
 import os
 import re
 import uuid
+from datetime import UTC, datetime
 
 import structlog.contextvars
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
@@ -55,7 +56,11 @@ async def _get_owned_document(
 ) -> Document:
     """Этап 4: документ виден только владельцу."""
     result = await db.execute(
-        select(Document).where(Document.id == document_id, Document.user_id == user_id)
+        select(Document).where(
+            Document.id == document_id,
+            Document.user_id == user_id,
+            Document.deleted_at.is_(None),
+        )
     )
     doc = result.scalars().first()
     if not doc:
@@ -124,7 +129,11 @@ async def upload_document(
 
         # Этап 4: идемпотентность — тот же файл уже есть, не жжём OCR и эмбеддинги
         existing = await db.execute(
-            select(Document).where(Document.sha256 == sha256, Document.user_id == user.id)
+            select(Document).where(
+                Document.sha256 == sha256,
+                Document.user_id == user.id,
+                Document.deleted_at.is_(None),
+            )
         )
         dup = existing.scalars().first()
         if dup:
@@ -193,7 +202,7 @@ async def list_documents(
     current_user: User = Depends(get_current_user),
 ):
     """S3: пагинация и фильтр по статусу вместо отдачи всех документов сразу."""
-    filters = [Document.user_id == current_user.id]
+    filters = [Document.user_id == current_user.id, Document.deleted_at.is_(None)]
     if status:
         filters.append(Document.status == status)
 
@@ -248,7 +257,11 @@ async def document_progress_sse(
                 return
             async with AsyncSessionLocal() as session:
                 res = await session.execute(
-                    select(Document).where(Document.id == document_id, Document.user_id == user_id)
+                    select(Document).where(
+                        Document.id == document_id,
+                        Document.user_id == user_id,
+                        Document.deleted_at.is_(None),
+                    )
                 )
                 doc = res.scalars().first()
             if not doc:
@@ -299,8 +312,9 @@ async def delete_document(
     current_user: User = Depends(get_current_user),
 ):
     doc = await _get_owned_document(db, document_id, current_user.id)
-    if os.path.exists(doc.file_path):
-        os.remove(doc.file_path)
+    # S4: мягкое удаление — файл и запись физически исчезнут после grace-периода
+    doc.deleted_at = datetime.now(UTC)
+    doc.status = "deleted"
     await log_action(
         db,
         current_user.id,
@@ -309,7 +323,6 @@ async def delete_document(
         resource_id=str(doc.id),
         ip_address=_client_ip(request),
     )
-    await db.delete(doc)
     await db.commit()
 
 

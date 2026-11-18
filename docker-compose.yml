@@ -20,6 +20,25 @@ services:
       timeout: 5s
       retries: 5
 
+  # S4: ежедневный pg_dump с ротацией копий (02:00 UTC, хранить 30 дней)
+  backup:
+    image: prodrigestivill/postgres-backup-local:16
+    container_name: ai_backup
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_DB: ${POSTGRES_DB:-ai_documents}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      SCHEDULE: "0 2 * * *"
+      BACKUP_KEEP_DAYS: 30
+      BACKUP_DIR: /backups
+    volumes:
+      - backup_data:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+
   # S3: опциональный пул соединений. Включение: DB_HOST=pgbouncer DB_PORT=6432
   pgbouncer:
     image: edoburu/pgbouncer:latest
@@ -148,6 +167,24 @@ services:
       backend:
         condition: service_started
 
+  # S4: планировщик периодических задач (retention)
+  beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ai_celery_beat
+    restart: unless-stopped
+    command: celery -A app.worker.celery_app beat --loglevel=info
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@${DB_HOST:-db}:${DB_PORT:-5432}/${POSTGRES_DB:-ai_documents}"
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+
   # S2: мониторинг задач Celery
   flower:
     build:
@@ -200,3 +237,4 @@ volumes:
   shared_storage:
   prometheus_data:
   grafana_data:
+  backup_data:

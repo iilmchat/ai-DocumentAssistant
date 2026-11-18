@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     MAX_DOCUMENTS_PER_USER: int = 100
     MAX_STORAGE_BYTES_PER_USER: int = 2 * 1024 * 1024 * 1024  # 2 ГБ
 
+    # --- Retention / данные (S4) ---
+    RETENTION_DAYS: int = 365  # срок хранения аудита и удалённых документов
+    SOFT_DELETE_GRACE_DAYS: int = 7  # отложенная физическая очистка файлов
+    SUMMARY_VERSIONS_KEEP: int = 20  # сколько версий конспекта хранить на документ
+
     # --- JWT / rate limiting (S1) ---
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30

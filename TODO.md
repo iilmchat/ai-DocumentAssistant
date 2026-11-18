@@ -123,15 +123,15 @@
 
 **Цель:** безопасно обновляться и восстанавливаться.
 
-- `[ ] P0` **S4-01** Автоматический backup Postgres (pg_dump в cron/S3) + документированное восстановление и проверка restores
-- `[ ] P0` **S4-02** Retention policy: срок хранения документов/версий, мягкое удаление + очистка файлов из `shared_storage`
-- `[ ] P1` **S4-03** Миграции данных (не только схемы) и smoke-проверка после `alembic upgrade head`
-- `[ ] P1` **S4-04** Staging-окружение (отдельный compose/профиль) и smoke-тест после деплоя
-- `[ ] P1` **S4-05** `LICENSE`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, шаблоны issue/PR
-- `[ ] P2` **S4-06** Semantic versioning + automated changelog (release-please) и теги релизов
-- `[ ] P2` **S4-07** Обновить устаревшие `docs/architecture/rag-pipeline.md` и `docs/operations/*` под текущее состояние (PyPDF2/1536 уже не актуален)
+- `[~] P0` **S4-01** Backup: сервис `pg_dump` по расписанию + volume, `make backup`, инструкция `docs/operations/backup-restore.md`; учения по restore — чек-лист заполняется на стейдже `[?]`
+- `[x] P0` **S4-02** Retention: `deleted_at` + grace 7 дней, очистка версий (последние 20) и аудита (365 дней), задача `cleanup_retention_task` + beat
+- `[x] P1` **S4-03** Data-migration в `0004` (нормализация статусов) и smoke-check схемы при старте (`scripts/smoke_check.py`, `make smoke`)
+- `[x] P1` **S4-04** `docker-compose.staging.yml`, цели `make staging-up/down`, обновлён deployment guide
+- `[x] P1` **S4-05** `LICENSE`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, шаблоны issue/PR
+- `[x] P2` **S4-06** `release-please` workflow, `backend/__version__.py`, версия в FastAPI
+- `[x] P2` **S4-07** Обновлены `rag-pipeline.md`, deployment/troubleshooting, добавлены backup-restore.md и load-test.md
 
-**Definition of Done:** учения по restore выполнены успешно; новый разработчик поднимает проект по `CONTRIBUTING.md` без участия автора.
+**Definition of Done:** инструкции и автоматизация готовы; фактические учения по restore — на стейдже (локально нет стека). `CONTRIBUTING.md` покрывает подъём проекта с нуля.
 
 ---
 

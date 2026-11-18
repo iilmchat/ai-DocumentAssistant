@@ -11,6 +11,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import func, select, text
 
+from __version__ import __version__
 from app.api import auth, chat, documents
 from app.core.cache import redis_client
 from app.core.config import settings
@@ -37,7 +38,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
-    version="1.0.0",
+    version=__version__,
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan,

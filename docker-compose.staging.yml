@@ -1,0 +1,31 @@
+# S4: staging-окружение. Запуск: make staging-up
+# Использует другие порты, чтобы не конфликтовать с dev-стеком.
+name: ai-document-assistant-staging
+
+services:
+  db:
+    ports:
+      - "127.0.0.1:15432:5432"
+  pgbouncer:
+    ports:
+      - "127.0.0.1:16432:6432"
+  redis:
+    ports:
+      - "127.0.0.1:16379:6379"
+  backend:
+    ports:
+      - "8080:8000"
+  frontend:
+    ports:
+      - "8081:80"
+  flower:
+    ports:
+      - "127.0.0.1:15555:5555"
+  prometheus:
+    ports:
+      - "127.0.0.1:19090:9090"
+  grafana:
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${STAGING_GRAFANA_PASSWORD:-staging}
+    ports:
+      - "127.0.0.1:13000:3000"

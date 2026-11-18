@@ -1,22 +1,53 @@
-# Развертывание и эксплуатация (Deployment)
+# Развёртывание и эксплуатация
 
-## Продакшн-сборка через Docker Compose
-Для развертывания на VDS/VPS (Ubuntu 22.04/24.04):
+## Локально / dev
 
-1. Установите Docker и плагин Docker Compose.
-2. Склонируйте репозиторий и создайте `.env` с боевыми паролями БД и API-ключом.
-3. Запустите сборку в фоновом режиме:
-   ```bash
-   docker compose up --build -d
-   ```
-4. Настройте автоматический перезапуск контейнеров (`restart: unless-stopped` уже задан в `docker-compose.yml`).
-
-## Резервное копирование данных
-Критически важные данные хранятся в двух Docker volumes:
-- `postgres_data` — таблицы и векторные индексы.
-- `shared_storage` — оригиналы загруженных файлов.
-
-Создание дампа БД:
 ```bash
-docker exec -t ai_postgres pg_dump -U postgres doc_assistant > backup_$(date +%F).sql
+cp backend/.env.example backend/.env   # указать OPENAI_API_KEY
+docker compose up --build -d
 ```
+
+Backend автоматически применяет Alembic-миграции и выполняет smoke-check (`scripts/smoke_check.py`).
+
+## Staging (S4)
+
+```bash
+make staging-up     # docker-compose.staging.yml: отдельные порты и имя проекта
+# API: http://localhost:8080/docs, UI: http://8081, Grafana: http://localhost:13000
+make staging-down
+```
+
+## Сервисы
+
+| Сервис | Порт (dev) | Назначение |
+| :--- | :--- | :--- |
+| frontend | 80 | UI |
+| backend | 8000 | API, `/health/live`, `/health/ready`, `/metrics` |
+| worker / ocr-worker | — | Celery: default+dlq и ocr |
+| beat | — | ежедневный retention (S4) |
+| db | 127.0.0.1:5432 | PostgreSQL + pgvector |
+| pgbouncer | 127.0.0.1:6432 | опциональный пул (`DB_HOST=pgbouncer DB_PORT=6432`) |
+| redis | 127.0.0.1:6379 | брокер и кэш |
+| flower | 127.0.0.1:5555 | мониторинг задач |
+| prometheus | 127.0.0.1:9090 | метрики и алерты |
+| grafana | 127.0.0.1:3000 | дашборд |
+| backup | — | ежедневный pg_dump, хранение 30 дней |
+
+## Резервное копирование и восстановление
+
+См. [`backup-restore.md`](./backup-restore.md). Ежедневный дамп в volume `backup_data`,
+ручной — `make backup`.
+
+## Reload / обновление
+
+```bash
+git pull
+docker compose up --build -d      # миграции применятся при старте backend
+docker compose ps
+curl http://localhost/health/ready
+```
+
+## Переменные окружения
+
+Все секреты — в `.env` (не коммитится). Полный список — `backend/.env.example`.
+Для прода обязательно заменить `SECRET_KEY`, `POSTGRES_PASSWORD`, `GRAFANA_PASSWORD`.
