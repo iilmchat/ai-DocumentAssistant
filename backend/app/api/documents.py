@@ -3,6 +3,7 @@ import os
 import re
 import uuid
 
+import structlog.contextvars
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import func
@@ -171,10 +172,12 @@ async def upload_document(
         raise
 
     # Этап 4: маршрутизация по очередям — PDF со сканами и изображения уходят в ocr-очередь
+    # S2: передаём request_id в воркер, чтобы логи API и задачи связывались
+    request_id = structlog.contextvars.get_contextvars().get("request_id")
     if canonical_ext == ".pdf" or mime in IMAGE_MIMES:
-        process_scanned_document_task.delay(str(new_doc.id), file_path)
+        process_scanned_document_task.delay(str(new_doc.id), file_path, request_id)
     else:
-        process_document_task.delay(str(new_doc.id), file_path)
+        process_document_task.delay(str(new_doc.id), file_path, request_id)
 
     return new_doc
 
@@ -210,19 +213,26 @@ async def document_progress(
 
 @router.get("/{document_id}/progress/stream")
 async def document_progress_sse(
+    request: Request,
     document_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Этап 4: SSE — живой прогресс без нагрузки поллингом."""
+    """Этап 4 / S2: SSE с heartbeat, таймаутом и обработкой отключения клиента."""
     await _get_owned_document(db, document_id, current_user.id)
     user_id = current_user.id
 
     async def gen():
+        import time
+
         from app.core.database import AsyncSessionLocal
 
         last = None
-        while True:
+        started = time.monotonic()
+        heartbeat_at = started + 15
+        while time.monotonic() - started < 1800:  # 30 мин максимум
+            if await request.is_disconnected():
+                return
             async with AsyncSessionLocal() as session:
                 res = await session.execute(
                     select(Document).where(Document.id == document_id, Document.user_id == user_id)
@@ -238,9 +248,18 @@ async def document_progress_sse(
             if doc.status in ("completed", "failed"):
                 yield "event: done\ndata: end\n\n"
                 return
+            if time.monotonic() >= heartbeat_at:
+                yield ": heartbeat\n\n"
+                heartbeat_at = time.monotonic() + 15
             await asyncio.sleep(1)
 
-    return StreamingResponse(gen(), media_type="text/event-stream")
+        yield 'event: error\ndata: "progress timeout"\n\n'
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/{document_id}/pages", response_model=list[PageResponse])

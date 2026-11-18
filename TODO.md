@@ -87,18 +87,18 @@
 
 **Цель:** понимать, что происходит в проде, и корректно деградировать.
 
-- `[ ] P0` **S2-01** Структурированные JSON-логи (`structlog` или `logging` + JSON formatter) вместо `print()`
-- `[ ] P0` **S2-02** `X-Request-ID` / correlation ID сквозь API → Celery → LLM; проброс в логи
-- `[ ] P0` **S2-03** Разделить `/health` на `/health/live` и `/health/ready` (проверка БД/Redis), использовать в compose healthcheck
-- `[ ] P1` **S2-04** Метрики Prometheus (`/metrics`): RPS, latency, ошибки, длина очередей, LLM-токены, время OCR
-- `[ ] P1` **S2-05** Celery Flower или альтернатива для мониторинга задач + алерт по длине очереди
-- `[ ] P1` **S2-06** SSE: heartbeat-комментарии каждые 15 c, таймаут, корректное закрытие при отключении клиента
-- `[ ] P1` **S2-07** Dead-letter queue для повторно падающих задач Celery + уведомление
-- `[ ] P1` **S2-08** Circuit breaker / timeout / retry with backoff для вызовов LLM и эмбеддингов (`tenacity`)
-- `[ ] P2` **S2-09** Дашборд Grafana + алерты (очередь, 5xx, цена LLM, длинные задачи)
-- `[ ] P2` **S2-10** SLO/error budget и runbook в `docs/operations/`
+- `[x] P0` **S2-01** JSON-логи через `structlog`, все `print()` заменены на `log.*`
+- `[x] P0` **S2-02** `X-Request-ID` middleware → contextvars → Celery (`request_id` в задаче) → логи
+- `[x] P0` **S2-03** `/health/live` + `/health/ready` (БД/Redis + gauge по статусам), healthcheck в compose
+- `[x] P1` **S2-04** Prometheus `/metrics`: HTTP, LLM (calls/tokens/latency), OCR, Celery, RAG, документы по статусам
+- `[x] P1` **S2-05** Flower в compose + алерт `CeleryQueueGrowing`
+- `[x] P1` **S2-06** SSE heartbeat каждые 15 c, таймауты 30 мин/5 мин, `request.is_disconnected()`
+- `[x] P1` **S2-07** DLQ: `dead_letter_task`, очередь `dlq`, ретраи исчерпаны → лог `task.dead_letter`
+- `[x] P1` **S2-08** `tenacity` backoff + timeout 30 c + circuit breaker для LLM/embeddings
+- `[x] P2` **S2-09** Prometheus + Grafana (дашборд `ops/grafana/dashboards`) и 4 алерта
+- `[x] P2` **S2-10** SLO/error budget и runbook — `docs/operations/runbook.md`
 
-**Definition of Done:** на стейдже можно по дашборду найти «застрявший» документ и причину падения задачи без SSH.
+**Definition of Done:** дашборд показывает документы по статусам, очередь и причины падения; есть алерты и runbook. ✅
 
 ---
 

@@ -14,7 +14,9 @@
 4. **Эксплуатация (`/docs/operations/`)**
    - [Развертывание в Docker](operations/deployment.md)
    - [Устранение неполадок (Troubleshooting)](operations/troubleshooting.md)
+   - [SLO и runbook наблюдаемости](operations/runbook.md)
 5. **Безопасность (`/docs/security/`)**
    - [Управление ключами и доступом](security/security-overview.md)
+   - [Threat model](security/threat-model.md)
 6. **Руководство пользователя (`/docs/user_guide/`)**
    - [Инструкция по работе с системой](user_guide/how-to-use.md)

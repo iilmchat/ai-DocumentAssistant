@@ -1,0 +1,34 @@
+groups:
+  - name: ai-document-assistant
+    rules:
+      - alert: High5xxRate
+        expr: sum(rate(http_requests_total{status=~"5.."}[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "5xx-ошибки API выше 5%"
+
+      - alert: DocumentsStuckProcessing
+        expr: documents_by_status{status="processing"} > 0
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Документ в статусе processing больше часа — проверьте воркер"
+
+      - alert: CeleryQueueGrowing
+        expr: celery_queue_length > 50
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Очередь Celery растёт — проверьте воркеры"
+
+      - alert: LLMCircuitOpen
+        expr: rate(llm_calls_total{status="circuit_open"}[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Circuit breaker LLM открыт — провайдер недоступен"

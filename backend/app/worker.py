@@ -12,13 +12,17 @@ extraction_method/confidence, прогресс processed_pages/total_pages
 
 import asyncio
 import os
+import time
 
+import structlog.contextvars
 from celery import Celery
 from sqlalchemy import delete, func
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.future import select
 
 from app.core.config import settings
+from app.core.logging import configure_logging, log
+from app.core.metrics import CELERY_LATENCY, CELERY_TASKS
 from app.models.models import Document, DocumentChunk, DocumentPage, SummaryVersion
 from app.services.ai_service import (
     ensure_embedding_dim,
@@ -29,6 +33,8 @@ from app.services.document_parser import extract_text_from_file, split_text_into
 from app.services.file_validation import IMAGE_EXTENSIONS
 from app.services.text_extraction import chunk_pages, extract_pages, extract_pages_from_image
 
+configure_logging()
+
 celery_app = Celery(
     "worker",
     broker=settings.CELERY_BROKER_URL,
@@ -38,6 +44,7 @@ celery_app = Celery(
 celery_app.conf.task_routes = {
     "process_document_task": {"queue": "default"},
     "process_scanned_document_task": {"queue": settings.CELERY_OCR_QUEUE},
+    "dead_letter_task": {"queue": "dlq"},
 }
 # одна тяжёлая OCR-задача за раз на воркер, чтобы не забить память
 celery_app.conf.worker_prefetch_multiplier = 1
@@ -158,27 +165,64 @@ async def async_process_document(document_id: str, file_path: str):
             await save_summary_version(session, doc.id, summary)
             doc.status = "completed"
             await session.commit()
-            print(f"Документ {document_id} обработан: {len(chunks)} чанков.")
-        except Exception as e:
-            print(f"Ошибка обработки документа {document_id}: {e}")
+            log.info("document.processed", document_id=document_id, chunks=len(chunks))
+        except Exception:
+            log.exception("document.failed", document_id=document_id)
             if doc:
                 doc.status = "failed"
                 await session.commit()
             raise
 
 
-@celery_app.task(name="process_document_task", bind=True, max_retries=2)
-def process_document_task(self, document_id: str, file_path: str):
+@celery_app.task(name="dead_letter_task")
+def dead_letter_task(
+    document_id: str, file_path: str, error: str, request_id: str | None = None
+) -> None:
+    """S2: последняя инстанция для задач, исчерпавших повторы."""
+    CELERY_TASKS.labels(task="dead_letter", status="failed").inc()
+    log.error(
+        "task.dead_letter",
+        document_id=document_id,
+        file_path=file_path,
+        error=error,
+        request_id=request_id,
+    )
+
+
+def _run_processing_task(
+    task_self, document_id: str, file_path: str, request_id: str | None, countdown: int
+) -> None:
+    task_name = task_self.name
+    token = structlog.contextvars.bind_contextvars(
+        request_id=request_id or "system", document_id=document_id, task=task_name
+    )
+    started = time.perf_counter()
+    CELERY_TASKS.labels(task=task_name, status="started").inc()
     try:
         asyncio.run(async_process_document(document_id, file_path))
     except Exception as exc:
-        raise self.retry(exc=exc, countdown=30) from exc
+        CELERY_TASKS.labels(task=task_name, status="failed").inc()
+        log.exception("task.failed", error=str(exc))
+        if task_self.request.retries >= task_self.max_retries:
+            log.error("task.retries_exhausted", error=str(exc))
+            dead_letter_task.delay(document_id, file_path, str(exc), request_id)
+            return
+        raise task_self.retry(exc=exc, countdown=countdown) from exc
+    else:
+        CELERY_TASKS.labels(task=task_name, status="success").inc()
+    finally:
+        CELERY_LATENCY.labels(task=task_name).observe(time.perf_counter() - started)
+        structlog.contextvars.reset_contextvars(**token)
+
+
+@celery_app.task(name="process_document_task", bind=True, max_retries=2)
+def process_document_task(self, document_id: str, file_path: str, request_id: str | None = None):
+    _run_processing_task(self, document_id, file_path, request_id, countdown=30)
 
 
 @celery_app.task(name="process_scanned_document_task", bind=True, max_retries=2)
-def process_scanned_document_task(self, document_id: str, file_path: str):
+def process_scanned_document_task(
+    self, document_id: str, file_path: str, request_id: str | None = None
+):
     """OCR-документы — в отдельную очередь ocr (см. task_routes)."""
-    try:
-        asyncio.run(async_process_document(document_id, file_path))
-    except Exception as exc:
-        raise self.retry(exc=exc, countdown=120) from exc
+    _run_processing_task(self, document_id, file_path, request_id, countdown=120)

@@ -115,7 +115,9 @@ def extract_pages(pdf_path: str) -> list[PageExtraction]:
                     continue
                 except Exception as e:
                     # OCR недоступен/упал — падаем обратно на текстовый слой
-                    print(f"OCR failed on page {page_no}: {e}")
+                    from app.core.logging import log
+
+                    log.warning("ocr.page_failed", page=page_no, error=str(e))
 
             blocks = _parse_page_structure(page, page_no)
             raw_len = len(re.sub(r"\s+", "", page.get_text("text") or ""))

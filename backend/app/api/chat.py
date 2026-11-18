@@ -20,10 +20,17 @@ from app.api.auth import get_current_user
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.errors import NotFoundError
+from app.core.metrics import RAG_QUERIES
 from app.core.rate_limit import limiter
 from app.models.models import Document, User
 from app.schemas.schemas import SourceCitation
-from app.services.ai_service import client, ensure_embedding_dim, generate_embeddings
+from app.services.ai_service import (
+    _resilient_call,
+    client,
+    ensure_embedding_dim,
+    generate_embeddings,
+    llm_breaker,
+)
 
 router = APIRouter(prefix="/api/v1/chat", tags=["Chat & RAG"])
 
@@ -116,6 +123,7 @@ async def _retrieve_context(payload: ChatRequest, db: AsyncSession, current_user
     if not doc_res.scalars().first():
         raise NotFoundError("Документ не найден.")
 
+    RAG_QUERIES.inc()
     fetch_k = max(settings.RERANK_TOP_K // 5, payload.top_k * 3)
     q_embeddings = await generate_embeddings([payload.question])
     question_vector = ensure_embedding_dim(q_embeddings[0])
@@ -161,7 +169,10 @@ async def ask_question(
         )
 
     context, citations = prepared
-    response = await client.chat.completions.create(
+    response = await _resilient_call(
+        llm_breaker,
+        "chat",
+        client.chat.completions.create,
         model=settings.LLM_MODEL,
         messages=_messages(payload.question, context),
         temperature=0.2,
@@ -185,6 +196,11 @@ async def stream_answer(
     prepared = await _retrieve_context(payload, db, current_user)
 
     async def gen():
+        import time
+
+        started = time.monotonic()
+        heartbeat_at = started + 15
+
         if prepared is None:
             yield 'event: error\ndata: "Не удалось найти релевантную информацию в документе."\n\n'
             return
@@ -197,13 +213,21 @@ async def stream_answer(
         )
 
         try:
-            stream = await client.chat.completions.create(
+            stream = await _resilient_call(
+                llm_breaker,
+                "chat_stream",
+                client.chat.completions.create,
                 model=settings.LLM_MODEL,
                 messages=_messages(payload.question, context),
                 temperature=0.2,
                 stream=True,
             )
             async for chunk in stream:
+                if await request.is_disconnected():
+                    return
+                if time.monotonic() - started > 300:
+                    yield 'event: error\ndata: "stream timeout"\n\n'
+                    return
                 delta = chunk.choices[0].delta.content if chunk.choices else None
                 if delta:
                     yield (
@@ -211,6 +235,9 @@ async def stream_answer(
                         + json.dumps({"delta": delta}, ensure_ascii=False)
                         + "\n\n"
                     )
+                if time.monotonic() >= heartbeat_at:
+                    yield ": heartbeat\n\n"
+                    heartbeat_at = time.monotonic() + 15
         except Exception as exc:
             yield (
                 "event: error\ndata: "

@@ -12,6 +12,7 @@
 - **Асинхронная индексация:** две очереди Celery (быстрая и OCR) + Redis, живой прогресс через SSE/поллинг.
 - **Многопользовательскость (Этап 4):** JWT-регистрация/логин, документы изолированы по владельцу.
 - **Безопасность (S1):** refresh-токены с ротацией и чёрным списком, rate limiting, защита от decompression bomb, квоты и audit log. Threat model — в [`docs/security/threat-model.md`](./docs/security/threat-model.md).
+- **Наблюдаемость (S2):** JSON-логи с `X-Request-ID`, Prometheus-метрики, Grafana-дашборд, Flower, SSE heartbeat, DLQ и circuit breaker. SLO и runbook — в [`docs/operations/runbook.md`](./docs/operations/runbook.md).
 - **Идемпотентность:** повторная загрузка того же файла (SHA-256) не пересчитывает OCR и эмбеддинги.
 
 ## Технологический стек

@@ -1,19 +1,58 @@
 import asyncio
+import time
 
 from openai import AsyncOpenAI
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    retry_if_not_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
+from app.core.circuit_breaker import CircuitBreaker, CircuitOpenError
 from app.core.config import settings
+from app.core.metrics import LLM_CALLS, LLM_LATENCY, LLM_TOKENS
 
 client = AsyncOpenAI(
     api_key=settings.OPENAI_API_KEY,
     base_url=settings.OPENAI_BASE_URL,
+    timeout=30.0,
 )
 
+llm_breaker = CircuitBreaker("llm", failure_threshold=5, cooldown_seconds=60)
 
-async def generate_embeddings(texts: list[str]) -> list[list[float]]:
-    """Генерация векторов фиксированной размерности (совпадает с колонкой vector(N))."""
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=8),
+    retry=retry_if_exception_type(Exception) & retry_if_not_exception_type(CircuitOpenError),
+    reraise=True,
+)
+async def _resilient_call(breaker: CircuitBreaker, operation: str, func, *args, **kwargs):
+    """S2: timeout + backoff + circuit breaker + метрики для внешних API."""
+    started = time.perf_counter()
     try:
-        response = await client.embeddings.create(
+        result = await breaker.call(func, *args, **kwargs)
+        usage = getattr(result, "usage", None)
+        tokens = getattr(usage, "total_tokens", None) if usage else None
+        if tokens:
+            LLM_TOKENS.labels(operation).inc(tokens)
+        LLM_CALLS.labels(operation, "success").inc()
+        return result
+    except CircuitOpenError:
+        LLM_CALLS.labels(operation, "circuit_open").inc()
+        raise
+    except Exception:
+        LLM_CALLS.labels(operation, "error").inc()
+        raise
+    finally:
+        LLM_LATENCY.labels(operation).observe(time.perf_counter() - started)
+
+
+async def _embeddings_call(texts: list[str]):
+    try:
+        return await client.embeddings.create(
             model=settings.EMBEDDING_MODEL,
             input=texts,
             dimensions=settings.EMBEDDING_DIM,
@@ -23,10 +62,15 @@ async def generate_embeddings(texts: list[str]) -> list[list[float]]:
         # поддерживают параметр dimensions — повторяем без него.
         if "dimension" not in str(exc).lower() and "400" not in str(exc):
             raise
-        response = await client.embeddings.create(
+        return await client.embeddings.create(
             model=settings.EMBEDDING_MODEL,
             input=texts,
         )
+
+
+async def generate_embeddings(texts: list[str]) -> list[list[float]]:
+    """Генерация векторов фиксированной размерности (совпадает с колонкой vector(N))."""
+    response = await _resilient_call(llm_breaker, "embeddings", _embeddings_call, texts)
     return [item.embedding for item in response.data]
 
 
@@ -43,7 +87,10 @@ def ensure_embedding_dim(embedding: list[float]) -> list[float]:
 
 async def summarize_text_block(text_block: str) -> str:
     """Промежуточный шаг (Map): сжимает большой блок текста в короткую выжимку."""
-    response = await client.chat.completions.create(
+    response = await _resilient_call(
+        llm_breaker,
+        "chat",
+        client.chat.completions.create,
         model=settings.LLM_MODEL,
         messages=[
             {
@@ -65,7 +112,10 @@ async def combine_summaries(summaries: list[str]) -> str:
 
     combined_text = "\n\n".join([f"- {s}" for s in summaries])
 
-    response = await client.chat.completions.create(
+    response = await _resilient_call(
+        llm_breaker,
+        "chat",
+        client.chat.completions.create,
         model=settings.LLM_MODEL,
         messages=[
             {
@@ -91,7 +141,10 @@ async def generate_document_summary_from_chunks(chunks: list[str]) -> str:
     # Если документ небольшой (до 5 чанков), суммаризируем всё сразу без промежуточных шагов
     if len(chunks) <= 5:
         full_context = "\n\n---\n\n".join(chunks)
-        response = await client.chat.completions.create(
+        response = await _resilient_call(
+            llm_breaker,
+            "chat",
+            client.chat.completions.create,
             model=settings.LLM_MODEL,
             messages=[
                 {
