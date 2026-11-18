@@ -7,6 +7,20 @@ from app.core.config import settings
 from app.services import ai_service
 
 
+@pytest.fixture(autouse=True)
+def _no_redis(monkeypatch):
+    """Тесты не должны стучаться в Redis."""
+
+    async def cached(_text):
+        return None
+
+    async def store(_text, _vector):
+        return None
+
+    monkeypatch.setattr(ai_service, "get_cached_embedding", cached)
+    monkeypatch.setattr(ai_service, "set_cached_embedding", store)
+
+
 def _embedding_response():
     return SimpleNamespace(data=[SimpleNamespace(embedding=[0.0] * settings.EMBEDDING_DIM)])
 
@@ -24,6 +38,22 @@ async def test_generate_embeddings_uses_configured_dimension():
     assert len(result[0]) == settings.EMBEDDING_DIM
     mock.assert_awaited_once()
     assert mock.await_args.kwargs["dimensions"] == settings.EMBEDDING_DIM
+
+
+@pytest.mark.asyncio
+async def test_generate_embeddings_uses_cache():
+    vector = [0.1] * settings.EMBEDDING_DIM
+
+    async def cached(_text):
+        return vector
+
+    with (
+        patch.object(ai_service, "get_cached_embedding", cached),
+        patch.object(ai_service.client.embeddings, "create", new=AsyncMock()) as create,
+    ):
+        result = await ai_service.generate_embeddings(["cached text"])
+    assert result == [vector]
+    create.assert_not_awaited()
 
 
 @pytest.mark.asyncio

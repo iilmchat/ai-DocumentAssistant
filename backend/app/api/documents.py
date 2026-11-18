@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import re
 import uuid
@@ -12,16 +13,17 @@ from sqlalchemy.future import select
 
 from app.api.auth import get_current_user
 from app.core.config import settings
-from app.core.database import get_db
+from app.core.database import AsyncSessionLocal, get_db
 from app.core.errors import NotFoundError
 from app.models.models import Document, DocumentChunk, DocumentPage, SummaryVersion, User
 from app.schemas.schemas import (
+    DocumentList,
     DocumentProgress,
     DocumentResponse,
     PageResponse,
     SummaryVersionResponse,
 )
-from app.services.ai_service import generate_document_summary
+from app.services.ai_service import generate_document_summary, stream_document_summary
 from app.services.audit import log_action
 from app.services.export import ExportData, render_docx, render_markdown, render_pdf
 from app.services.file_validation import (
@@ -182,17 +184,28 @@ async def upload_document(
     return new_doc
 
 
-@router.get("/", response_model=list[DocumentResponse])
+@router.get("/", response_model=DocumentList)
 async def list_documents(
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    status: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """S3: пагинация и фильтр по статусу вместо отдачи всех документов сразу."""
+    filters = [Document.user_id == current_user.id]
+    if status:
+        filters.append(Document.status == status)
+
+    total = await db.scalar(select(func.count()).select_from(Document).where(*filters))
     result = await db.execute(
         select(Document)
-        .where(Document.user_id == current_user.id)
+        .where(*filters)
         .order_by(Document.created_at.desc())
+        .limit(limit)
+        .offset(offset)
     )
-    return result.scalars().all()
+    return DocumentList(items=result.scalars().all(), total=total or 0, limit=limit, offset=offset)
 
 
 @router.get("/{document_id}/progress", response_model=DocumentProgress)
@@ -385,6 +398,55 @@ async def regenerate_summary(
     )
     await db.commit()
     return version
+
+
+@router.post("/{document_id}/summarize/stream")
+async def regenerate_summary_stream(
+    request: Request,
+    document_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """S3-08: генерация конспекта с потоковой отдачей токенов (SSE)."""
+    doc = await _get_owned_document(db, document_id, current_user.id)
+    full_text = await _collect_document_text(db, doc.id)
+    if not full_text.strip():
+        raise HTTPException(status_code=400, detail="Нет текста для суммаризации.")
+    user_id = current_user.id
+    ip = _client_ip(request)
+
+    async def gen():
+        parts: list[str] = []
+        async for token in stream_document_summary(full_text):
+            parts.append(token)
+            yield "event: token\ndata: " + json.dumps({"delta": token}, ensure_ascii=False) + "\n\n"
+
+        summary = "".join(parts)
+        async with AsyncSessionLocal() as session:
+            doc_row = await session.get(Document, doc.id)
+            if doc_row:
+                doc_row.summary = summary
+                await save_summary_version(session, doc_row.id, summary)
+                await log_action(
+                    session,
+                    user_id,
+                    "summary.regenerate_stream",
+                    resource_type="document",
+                    resource_id=str(doc.id),
+                    ip_address=ip,
+                )
+                await session.commit()
+        yield (
+            "event: done\ndata: "
+            + json.dumps({"length": len(summary)}, ensure_ascii=False)
+            + "\n\n"
+        )
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/{document_id}/versions/{version_id}/restore", response_model=DocumentResponse)

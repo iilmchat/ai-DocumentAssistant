@@ -1,4 +1,4 @@
-.PHONY: check backend-check frontend-check format backend-format frontend-format
+.PHONY: check backend-check frontend-check format backend-format frontend-format load-test
 
 check: backend-check frontend-check
 
@@ -22,3 +22,6 @@ backend-format:
 
 frontend-format:
 	cd frontend && npm run lint:fix
+
+load-test:
+	cd backend && locust -f tests/load/locustfile.py --host http://localhost

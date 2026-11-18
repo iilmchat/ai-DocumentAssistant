@@ -1,6 +1,7 @@
 import {
   AuthResponse,
   DocumentItem,
+  DocumentList,
   ChatResponse,
   SourceCitation,
   SummaryVersion,
@@ -122,8 +123,8 @@ export const apiClient = {
     return response.json()
   },
 
-  async getDocuments(): Promise<DocumentItem[]> {
-    const response = await authFetch(`${API_BASE_URL}/api/v1/documents/`)
+  async getDocuments(limit = 100): Promise<DocumentList> {
+    const response = await authFetch(`${API_BASE_URL}/api/v1/documents/?limit=${limit}`)
     if (!response.ok) throw new Error('Не удалось загрузить список документов')
     return response.json()
   },
@@ -185,6 +186,53 @@ export const apiClient = {
       throw new Error(err.detail || 'Не удалось пересоздать конспект')
     }
     return response.json()
+  },
+
+  /** S3-08: стриминг генерации конспекта. */
+  async regenerateSummaryStream(
+    documentId: string,
+    callbacks: { onToken: (delta: string) => void; onDone?: () => void },
+    signal?: AbortSignal
+  ): Promise<void> {
+    const response = await authFetch(
+      `${API_BASE_URL}/api/v1/documents/${documentId}/summarize/stream`,
+      { method: 'POST', signal }
+    )
+    if (!response.ok || !response.body) {
+      const err = await response.json().catch(() => ({}))
+      throw new Error(err.detail || 'Не удалось сгенерировать конспект')
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let finished = false
+    while (!finished) {
+      const { done, value } = await reader.read()
+      finished = done
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const frames = buffer.split('\n\n')
+      buffer = frames.pop() ?? ''
+      for (const frame of frames) {
+        let event = 'message'
+        let data = ''
+        for (const line of frame.split('\n')) {
+          if (line.startsWith('event:')) event = line.slice(6).trim()
+          else if (line.startsWith('data:')) data += line.slice(5).trim()
+        }
+        if (!data) continue
+        try {
+          const payload = JSON.parse(data)
+          if (event === 'token') callbacks.onToken(payload.delta ?? '')
+          else if (event === 'done') callbacks.onDone?.()
+          else if (event === 'error') throw new Error(payload.message ?? 'Ошибка генерации')
+        } catch (err) {
+          if (err instanceof SyntaxError) continue
+          throw err
+        }
+      }
+    }
   },
 
   async restoreVersion(documentId: string, versionId: string): Promise<DocumentItem> {

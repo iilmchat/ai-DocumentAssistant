@@ -24,6 +24,7 @@ export const SummaryViewer: React.FC<SummaryViewerProps> = ({ document, onUpdate
   const [error, setError] = useState<string | null>(null)
   const [versions, setVersions] = useState<SummaryVersion[]>([])
   const [showVersions, setShowVersions] = useState(false)
+  const [streamingSummary, setStreamingSummary] = useState<string | null>(null)
 
   const loadVersions = async () => {
     try {
@@ -60,14 +61,19 @@ export const SummaryViewer: React.FC<SummaryViewerProps> = ({ document, onUpdate
   const handleRegenerate = async () => {
     setBusy(true)
     setError(null)
+    setStreamingSummary('')
     try {
-      await apiClient.regenerateSummary(document.id)
+      // S3-08: токены конспекта приходят по SSE
+      await apiClient.regenerateSummaryStream(document.id, {
+        onToken: (delta) => setStreamingSummary((prev) => (prev ?? '') + delta),
+      })
       onUpdated()
       await loadVersions()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка генерации')
     } finally {
       setBusy(false)
+      setStreamingSummary(null)
     }
   }
 
@@ -170,7 +176,10 @@ export const SummaryViewer: React.FC<SummaryViewerProps> = ({ document, onUpdate
         </div>
 
         <div className="p-6 text-slate-700 leading-relaxed whitespace-pre-wrap text-sm md:text-base">
-          {document.summary || 'Конспект отсутствует.'}
+          {streamingSummary ?? document.summary ?? 'Конспект отсутствует.'}
+          {streamingSummary !== null && (
+            <span className="inline-block w-1.5 h-4 ml-1 align-middle bg-indigo-500 animate-pulse" />
+          )}
         </div>
       </div>
 

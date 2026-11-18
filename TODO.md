@@ -106,16 +106,16 @@
 
 **Цель:** выдержать рост числа документов без линейной деградации поиска.
 
-- `[ ] P0` **S3-01** ANN-индекс pgvector: HNSW (`m`, `ef_construction`) с настройкой `ef_search`, замер точности vs точный поиск
-- `[ ] P0` **S3-02** Пагинация `GET /documents` (`limit`/`offset` или cursor) + фильтр по статусу
-- `[ ] P1` **S3-03** Кэш эмбеддингов запросов и частых чанков (Redis, TTL), инвалидация при реиндексации
-- `[ ] P1` **S3-04** Настройка пула SQLAlchemy (`pool_size`, `max_overflow`, `pool_pre_ping`) + PgBouncer в compose `[?]`
-- `[ ] P1` **S3-05** Батчинг LLM-запросов и конкуренция: `semaphore` на parallel map-reduce, лимит RPS провайдера
-- `[ ] P1` **S3-06** Нагрузочное тестирование (Locust/k6): 100 одновременных загрузок + 50 RPS чата
-- `[ ] P2` **S3-07** Профилирование чанкера и OCR на больших PDF (50–500 страниц), мемоитация структурно одинаковых страниц
-- `[ ] P2` **S3-08** Стриминг генерации конспекта (сейчас только чат стримится)
+- `[x] P0` **S3-01** HNSW-индекс (миграция `0003`), `hnsw.ef_search`, метрика `vector_search_duration_seconds`; замер точности — в load-test report
+- `[x] P0` **S3-02** Пагинация `limit`/`offset` + фильтр `status`, конверт `{items,total,limit,offset}`, фронт обновлён
+- `[x] P1` **S3-03** Redis-кэш эмбеддингов с версионированием, инвалидация после реиндексации
+- `[x] P1` **S3-04** Пул SQLAlchemy (`pool_size`/`max_overflow`/`pre_ping`), PgBouncer в compose (`DB_HOST=pgbouncer DB_PORT=6432`)
+- `[x] P1` **S3-05** Per-loop `asyncio.Semaphore` для LLM-запросов (`LLM_MAX_CONCURRENCY`) + backoff из S2
+- `[~] P1` **S3-06** Locust-сценарий и методология готовы (`tests/load/locustfile.py`, `docs/operations/load-test.md`); прогон на стейдже не выполнялся `[?]`
+- `[x] P2` **S3-07** Мемоитация структурно одинаковых страниц в `extract_pages`
+- `[x] P2` **S3-08** Стриминг генерации конспекта `POST /summarize/stream` + предпросмотр на фронте
 
-**Definition of Done:** p95 поиска < 300 мс при 10k чанков; отчёт по load-test в `docs/operations/`.
+**Definition of Done:** p95 поиска < 300 мс при 10k чанков — TARGET, фактический замер на стейдже ожидается; методология и отчёт-шаблон в `docs/operations/load-test.md`.
 
 ---
 

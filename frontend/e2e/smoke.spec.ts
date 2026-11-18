@@ -31,8 +31,12 @@ test('авторизованный пользователь видит конс�
     })
   )
 
-  await page.route('**/api/v1/documents/', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([DOC]) })
+  await page.route('**/api/v1/documents/**', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ items: [DOC], total: 1, limit: 100, offset: 0 }),
+    })
   )
 
   await page.route('**/api/v1/documents/*/versions', (route) =>

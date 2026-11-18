@@ -48,11 +48,23 @@ class Settings(BaseSettings):
     MAX_FAILED_LOGINS: int = 5
     LOGIN_LOCKOUT_MINUTES: int = 15
 
-    # --- Embeddings / поиск (Этап 5) ---
+    # --- Embeddings / поиск (Этап 5 / S3) ---
     EMBEDDING_MODEL: str = "text-embedding-3-large"
     EMBEDDING_DIM: int = 1024  # фиксируем размерность; менять через миграцию
     RERANK_TOP_K: int = 50  # кандидатов перед реранкером
     RRF_K: int = 60  # параметр Reciprocal Rank Fusion
+    # HNSW-индекс pgvector (миграция 0003)
+    USE_ANN_INDEX: bool = True
+    HNSW_M: int = 16
+    HNSW_EF_CONSTRUCTION: int = 64
+    HNSW_EF_SEARCH: int = 80
+    EMBEDDING_CACHE_TTL_SECONDS: int = 3600
+
+    # --- Пул БД и конкуренция LLM (S3) ---
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 20
+    DB_POOL_PRE_PING: bool = True
+    LLM_MAX_CONCURRENCY: int = 4
 
     model_config = SettingsConfigDict(
         env_file=".env",

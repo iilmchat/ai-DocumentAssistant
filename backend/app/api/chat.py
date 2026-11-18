@@ -20,7 +20,7 @@ from app.api.auth import get_current_user
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.errors import NotFoundError
-from app.core.metrics import RAG_QUERIES
+from app.core.metrics import RAG_QUERIES, SEARCH_LATENCY
 from app.core.rate_limit import limiter
 from app.models.models import Document, User
 from app.schemas.schemas import SourceCitation
@@ -48,6 +48,14 @@ class ChatResponse(BaseModel):
 
 
 async def _vector_search(db: AsyncSession, doc_id: str, q_vec: str, limit: int):
+    import time
+
+    started = time.perf_counter()
+    if settings.USE_ANN_INDEX:
+        await db.execute(
+            sql_text("SET LOCAL hnsw.ef_search = :ef"),
+            {"ef": settings.HNSW_EF_SEARCH},
+        )
     rows = await db.execute(
         sql_text("""
         SELECT id, content, page_numbers, headings, extraction_method
@@ -58,6 +66,7 @@ async def _vector_search(db: AsyncSession, doc_id: str, q_vec: str, limit: int):
     """),
         {"doc_id": doc_id, "q_vec": q_vec, "limit": limit},
     )
+    SEARCH_LATENCY.observe(time.perf_counter() - started)
     return rows.fetchall()
 
 

@@ -14,6 +14,7 @@ OCR_LATENCY = Histogram("ocr_duration_seconds", "OCR duration")
 CELERY_TASKS = Counter("celery_tasks_total", "Celery tasks", ["task", "status"])
 CELERY_LATENCY = Histogram("celery_task_duration_seconds", "Celery task duration", ["task"])
 RAG_QUERIES = Counter("rag_queries_total", "RAG queries")
+SEARCH_LATENCY = Histogram("vector_search_duration_seconds", "Vector search duration")
 DOCS_BY_STATUS = Gauge("documents_by_status", "Documents by status", ["status"])
 
 

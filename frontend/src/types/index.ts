@@ -27,6 +27,13 @@ export interface DocumentItem {
   created_at: string
 }
 
+export interface DocumentList {
+  items: DocumentItem[]
+  total: number
+  limit: number
+  offset: number
+}
+
 export interface SourceCitation {
   page_numbers: number[]
   headings: string[]

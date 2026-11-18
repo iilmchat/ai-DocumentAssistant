@@ -8,8 +8,9 @@
   и не разрываются между чанками; повторяющиеся колонтитулы дедуплицируются.
 """
 
+import hashlib
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from app.core.config import settings
 from app.services.ocr import get_ocr_engine
@@ -94,6 +95,8 @@ def extract_pages(pdf_path: str) -> list[PageExtraction]:
 
     engine = get_ocr_engine(settings.OCR_ENGINE)
     results: list[PageExtraction] = []
+    # S3: мемоитация структурно одинаковых страниц (повторяющиеся шаблоны отчётов)
+    parsed_cache: dict[str, list[StructuredBlock]] = {}
 
     doc = fitz.open(pdf_path)
     try:
@@ -119,8 +122,14 @@ def extract_pages(pdf_path: str) -> list[PageExtraction]:
 
                     log.warning("ocr.page_failed", page=page_no, error=str(e))
 
-            blocks = _parse_page_structure(page, page_no)
-            raw_len = len(re.sub(r"\s+", "", page.get_text("text") or ""))
+            raw_text = page.get_text("text") or ""
+            cache_key = hashlib.sha256(raw_text.encode("utf-8")).hexdigest()
+            if cache_key in parsed_cache:
+                blocks = [replace(block, page_number=page_no) for block in parsed_cache[cache_key]]
+            else:
+                blocks = _parse_page_structure(page, page_no)
+                parsed_cache[cache_key] = [replace(block, page_number=1) for block in blocks]
+            raw_len = len(re.sub(r"\s+", "", raw_text))
             conf = 1.0 if raw_len else 0.0
             results.append(
                 PageExtraction(

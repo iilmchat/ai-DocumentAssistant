@@ -20,6 +20,7 @@ from sqlalchemy import delete, func
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.future import select
 
+from app.core.cache import invalidate_embedding_cache
 from app.core.config import settings
 from app.core.logging import configure_logging, log
 from app.core.metrics import CELERY_LATENCY, CELERY_TASKS
@@ -51,7 +52,13 @@ celery_app.conf.worker_prefetch_multiplier = 1
 celery_app.conf.task_acks_late = True
 celery_app.conf.task_time_limit = settings.PARSE_TIMEOUT_SECONDS * 4
 
-engine = create_async_engine(settings.DATABASE_URL, future=True)
+engine = create_async_engine(
+    settings.DATABASE_URL,
+    future=True,
+    pool_size=settings.DB_POOL_SIZE,
+    max_overflow=settings.DB_MAX_OVERFLOW,
+    pool_pre_ping=settings.DB_POOL_PRE_PING,
+)
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
 
@@ -159,6 +166,8 @@ async def async_process_document(document_id: str, file_path: str):
 
             if chunks:
                 await _embed_and_store_chunks(session, doc.id, chunks)
+                # S3: после реиндексации старый кэш эмбеддингов запросов неактуален
+                await invalidate_embedding_cache()
 
             summary = await generate_document_summary(full_text)
             doc.summary = summary

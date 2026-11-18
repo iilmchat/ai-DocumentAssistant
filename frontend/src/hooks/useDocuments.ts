@@ -11,7 +11,7 @@ export function useDocuments() {
   const fetchDocuments = useCallback(async () => {
     try {
       const data = await apiClient.getDocuments()
-      setDocuments(data)
+      setDocuments(data.items)
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Сервер API недоступен')

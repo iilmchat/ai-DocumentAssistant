@@ -10,6 +10,7 @@ from tenacity import (
     wait_exponential,
 )
 
+from app.core.cache import get_cached_embedding, set_cached_embedding
 from app.core.circuit_breaker import CircuitBreaker, CircuitOpenError
 from app.core.config import settings
 from app.core.metrics import LLM_CALLS, LLM_LATENCY, LLM_TOKENS
@@ -22,6 +23,16 @@ client = AsyncOpenAI(
 
 llm_breaker = CircuitBreaker("llm", failure_threshold=5, cooldown_seconds=60)
 
+# Semaphore привязан к event loop: воркер создаёт новый loop на задачу
+_llm_semaphores: dict[int, asyncio.Semaphore] = {}
+
+
+def _get_llm_semaphore() -> asyncio.Semaphore:
+    loop_id = id(asyncio.get_running_loop())
+    if loop_id not in _llm_semaphores:
+        _llm_semaphores[loop_id] = asyncio.Semaphore(settings.LLM_MAX_CONCURRENCY)
+    return _llm_semaphores[loop_id]
+
 
 @retry(
     stop=stop_after_attempt(3),
@@ -33,7 +44,8 @@ async def _resilient_call(breaker: CircuitBreaker, operation: str, func, *args, 
     """S2: timeout + backoff + circuit breaker + метрики для внешних API."""
     started = time.perf_counter()
     try:
-        result = await breaker.call(func, *args, **kwargs)
+        async with _get_llm_semaphore():
+            result = await breaker.call(func, *args, **kwargs)
         usage = getattr(result, "usage", None)
         tokens = getattr(usage, "total_tokens", None) if usage else None
         if tokens:
@@ -69,9 +81,17 @@ async def _embeddings_call(texts: list[str]):
 
 
 async def generate_embeddings(texts: list[str]) -> list[list[float]]:
-    """Генерация векторов фиксированной размерности (совпадает с колонкой vector(N))."""
-    response = await _resilient_call(llm_breaker, "embeddings", _embeddings_call, texts)
-    return [item.embedding for item in response.data]
+    """Вектора фиксированной размерности с Redis-кэшем (S3)."""
+    cached: list[list[float] | None] = [await get_cached_embedding(text) for text in texts]
+    missing = [text for text, vector in zip(texts, cached, strict=True) if vector is None]
+    if missing:
+        response = await _resilient_call(llm_breaker, "embeddings", _embeddings_call, missing)
+        vectors: list[list[float]] = [item.embedding for item in response.data]
+        for text, vector in zip(missing, vectors, strict=True):
+            await set_cached_embedding(text, vector)
+        iterator = iter(vectors)
+        cached = [vector if vector is not None else next(iterator) for vector in cached]
+    return [vector for vector in cached if vector is not None]
 
 
 def ensure_embedding_dim(embedding: list[float]) -> list[float]:
@@ -172,6 +192,39 @@ async def generate_document_summary_from_chunks(chunks: list[str]) -> str:
         return "Произошла ошибка при генерации конспекта."
 
     return await combine_summaries(valid_summaries)
+
+
+async def stream_document_summary(full_text: str):
+    """S3-08: стриминг конспекта токенами (маленькие документы — сразу, большие — Map/Reduce)."""
+    if not full_text or not full_text.strip():
+        yield "Документ пуст."
+        return
+
+    context = full_text[:15000]
+    if len(full_text) > 12000:
+        parts = [full_text[i : i + 4000] for i in range(0, min(len(full_text), 48000), 4000)]
+        maps = await asyncio.gather(*[summarize_text_block(part) for part in parts])
+        context = "\n\n".join(part for part in maps if isinstance(part, str) and part.strip())
+
+    stream = await _resilient_call(
+        llm_breaker,
+        "summary_stream",
+        client.chat.completions.create,
+        model=settings.LLM_MODEL,
+        messages=[
+            {
+                "role": "system",
+                "content": "Ты профессиональный аналитик. Составь четкий структурированный конспект в Markdown.",
+            },
+            {"role": "user", "content": f"Текст документа:\n{context}"},
+        ],
+        temperature=0.3,
+        stream=True,
+    )
+    async for chunk in stream:
+        delta = chunk.choices[0].delta.content if chunk.choices else None
+        if delta:
+            yield delta
 
 
 async def generate_document_summary(full_text: str) -> str:

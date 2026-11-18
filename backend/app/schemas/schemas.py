@@ -18,6 +18,13 @@ class DocumentResponse(BaseModel):
         from_attributes = True
 
 
+class DocumentList(BaseModel):
+    items: list[DocumentResponse]
+    total: int
+    limit: int
+    offset: int
+
+
 class DocumentProgress(BaseModel):
     id: uuid.UUID
     status: str
