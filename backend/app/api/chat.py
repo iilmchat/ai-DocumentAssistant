@@ -21,6 +21,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.errors import NotFoundError
 from app.core.metrics import RAG_QUERIES, SEARCH_LATENCY
+from app.core.prompts import render
 from app.core.rate_limit import limiter
 from app.models.models import Document, User
 from app.schemas.schemas import SourceCitation
@@ -31,6 +32,8 @@ from app.services.ai_service import (
     generate_embeddings,
     llm_breaker,
 )
+from app.services.reranker import rerank_chunks
+from app.services.usage import record_usage
 
 router = APIRouter(prefix="/api/v1/chat", tags=["Chat & RAG"])
 
@@ -103,20 +106,12 @@ def reciprocal_rank_fusion(*rankings, k: int = 60) -> list:
 
 
 def _build_prompt(context: str, question: str) -> str:
-    return (
-        "Используя следующий контекст из документа, ответь на вопрос пользователя. "
-        "Контекст содержит метки страниц вида [стр. N]. ОБЯЗАТЕЛЬНО указывай ссылки на страницы "
-        "в конце каждого утверждения в формате (стр. N). Если ответа в контексте нет — прямо скажи об этом.\n\n"
-        f"Контекст:\n{context}\n\nВопрос: {question}"
-    )
+    return render("rag_user", context=context, question=question)
 
 
 def _messages(question: str, context: str) -> list[ChatCompletionMessageParam]:
     return [
-        {
-            "role": "system",
-            "content": "Ты внимательный ассистент по документам. Отвечай только по контексту, цитируй страницы.",
-        },
+        {"role": "system", "content": render("rag_system")},
         {"role": "user", "content": _build_prompt(context, question)},
     ]
 
@@ -138,7 +133,13 @@ async def _retrieve_context(payload: ChatRequest, db: AsyncSession, current_user
     question_vector = ensure_embedding_dim(q_embeddings[0])
     vec_rows = await _vector_search(db, str(payload.document_id), str(question_vector), fetch_k)
     fts_rows = await _fts_search(db, str(payload.document_id), payload.question, fetch_k)
-    fused = reciprocal_rank_fusion(vec_rows, fts_rows, k=settings.RRF_K)[: payload.top_k]
+    candidates = reciprocal_rank_fusion(vec_rows, fts_rows, k=settings.RRF_K)[
+        : settings.RERANK_TOP_K
+    ]
+    if settings.RERANK_ENABLED and len(candidates) > payload.top_k:
+        fused = await rerank_chunks(payload.question, candidates, payload.top_k)
+    else:
+        fused = candidates[: payload.top_k]
 
     if not fused:
         return None
@@ -186,6 +187,8 @@ async def ask_question(
         messages=_messages(payload.question, context),
         temperature=0.2,
     )
+    await record_usage(db, current_user.id, payload.document_id, "chat")
+    await db.commit()
     return ChatResponse(
         answer=response.choices[0].message.content or "",
         sources=[c.snippet for c in citations],
@@ -230,6 +233,7 @@ async def stream_answer(
                 messages=_messages(payload.question, context),
                 temperature=0.2,
                 stream=True,
+                stream_options={"include_usage": True},
             )
             async for chunk in stream:
                 if await request.is_disconnected():
@@ -244,6 +248,18 @@ async def stream_answer(
                         + json.dumps({"delta": delta}, ensure_ascii=False)
                         + "\n\n"
                     )
+                usage = getattr(chunk, "usage", None)
+                if usage and getattr(usage, "total_tokens", None):
+                    from app.services.ai_service import _last_usage
+
+                    _last_usage.set(
+                        {
+                            "prompt_tokens": usage.prompt_tokens or 0,
+                            "completion_tokens": usage.completion_tokens or 0,
+                            "total_tokens": usage.total_tokens,
+                            "model": settings.LLM_MODEL,
+                        }
+                    )
                 if time.monotonic() >= heartbeat_at:
                     yield ": heartbeat\n\n"
                     heartbeat_at = time.monotonic() + 15
@@ -253,6 +269,11 @@ async def stream_answer(
                 + json.dumps({"message": str(exc)}, ensure_ascii=False)
                 + "\n\n"
             )
+        from app.core.database import AsyncSessionLocal
+
+        async with AsyncSessionLocal() as usage_db:
+            await record_usage(usage_db, current_user.id, payload.document_id, "chat_stream")
+            await usage_db.commit()
         yield "event: done\ndata: {}\n\n"
 
     return StreamingResponse(

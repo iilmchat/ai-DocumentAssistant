@@ -15,6 +15,7 @@
 - **Наблюдаемость (S2):** JSON-логи с `X-Request-ID`, Prometheus-метрики, Grafana-дашборд, Flower, SSE heartbeat, DLQ и circuit breaker. SLO и runbook — в [`docs/operations/runbook.md`](./docs/operations/runbook.md).
 - **Производительность (S3):** HNSW-индекс pgvector, пагинация, Redis-кэш эмбеддингов, пул БД/PgBouncer, стриминг конспекта. Нагрузочный сценарий — в [`docs/operations/load-test.md`](./docs/operations/load-test.md).
 - **Эксплуатация (S4):** backup/restore, мягкое удаление с retention, staging-стек, smoke-check после миграций, release-please. См. [`CONTRIBUTING.md`](./CONTRIBUTING.md) и [`docs/operations/backup-restore.md`](./docs/operations/backup-restore.md).
+- **Качество ответов (S5):** LLM-reranker, версионированные промпты, учёт токенов/стоимости, экспорт с цитатами, офлайн-оценка RAG в CI, i18n, предпросмотр страниц и PWA.
 - **Идемпотентность:** повторная загрузка того же файла (SHA-256) не пересчитывает OCR и эмбеддинги.
 
 ## Технологический стек

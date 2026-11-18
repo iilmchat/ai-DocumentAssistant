@@ -10,6 +10,7 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { ChatMessage, SourceCitation } from '../types'
+import { useI18n } from '../i18n'
 
 interface ChatPanelProps {
   documentTitle: string
@@ -18,13 +19,16 @@ interface ChatPanelProps {
   isSending: boolean
   onSendMessage: (question: string) => void
   onStopGeneration: () => void
+  onPageClick?: (page: number) => void
 }
 
-const SourceAccordion: React.FC<{ citations: SourceCitation[]; sources?: string[] }> = ({
-  citations,
-  sources,
-}) => {
+const SourceAccordion: React.FC<{
+  citations: SourceCitation[]
+  sources?: string[]
+  onPageClick?: (page: number) => void
+}> = ({ citations, sources, onPageClick }) => {
   const [open, setOpen] = useState(false)
+  const { t } = useI18n()
 
   // Fallback для старого формата ответа без цитат
   const items: SourceCitation[] = citations?.length
@@ -45,7 +49,9 @@ const SourceAccordion: React.FC<{ citations: SourceCitation[]; sources?: string[
         className="inline-flex items-center gap-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-700"
       >
         <Quote className="w-3.5 h-3.5" />
-        <span>Источники из документа ({items.length})</span>
+        <span>
+          {t('sources')} ({items.length})
+        </span>
         {open ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
       </button>
 
@@ -59,9 +65,14 @@ const SourceAccordion: React.FC<{ citations: SourceCitation[]; sources?: string[
               <div className="flex flex-wrap items-center gap-1.5 mb-1">
                 <span className="font-semibold text-slate-400">#{idx + 1}</span>
                 {citation.page_numbers.length > 0 && (
-                  <span className="inline-flex items-center rounded bg-indigo-100 text-indigo-700 px-1.5 py-0.5 font-medium">
+                  <button
+                    type="button"
+                    onClick={() => onPageClick?.(citation.page_numbers[0])}
+                    aria-label={`Открыть страницу ${citation.page_numbers[0]}`}
+                    className="inline-flex items-center rounded bg-indigo-100 text-indigo-700 px-1.5 py-0.5 font-medium hover:bg-indigo-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                  >
                     стр. {citation.page_numbers.join(', ')}
-                  </span>
+                  </button>
                 )}
                 {citation.extraction_method && (
                   <span className="text-[10px] uppercase tracking-wide text-slate-400">
@@ -90,9 +101,18 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
   isSending,
   onSendMessage,
   onStopGeneration,
+  onPageClick,
 }) => {
-  const [input, setInput] = useState('')
+  const DRAFT_KEY = `chat:draft:${documentTitle}`
+  const [input, setInput] = useState(
+    () => localStorage.getItem(`chat:draft:${documentTitle}`) ?? ''
+  )
   const bottomRef = useRef<HTMLDivElement | null>(null)
+  const { t } = useI18n()
+
+  useEffect(() => {
+    localStorage.setItem(DRAFT_KEY, input)
+  }, [input, DRAFT_KEY])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -113,11 +133,9 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mb-3">
               <Sparkles className="w-6 h-6" />
             </div>
-            <h3 className="text-base font-semibold text-slate-900">Задайте вопрос по документу</h3>
+            <h3 className="text-base font-semibold text-slate-900">{t('askTitle')}</h3>
             <p className="text-sm text-slate-500 max-w-md mt-1">
-              ИИ найдет релевантные фрагменты в файле{' '}
-              <span className="font-medium text-slate-700">«{documentTitle}»</span> и сформулирует
-              точный ответ с цитатами.
+              {t('askHint')} <span className="font-medium text-slate-700">«{documentTitle}»</span>.
             </p>
           </div>
         ) : (
@@ -151,7 +169,11 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
                   </div>
 
                   {!isUser && (msg.citations || msg.sources) && (
-                    <SourceAccordion citations={msg.citations ?? []} sources={msg.sources} />
+                    <SourceAccordion
+                      citations={msg.citations ?? []}
+                      sources={msg.sources}
+                      onPageClick={onPageClick}
+                    />
                   )}
                 </div>
 
@@ -174,11 +196,8 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             disabled={disabled || isSending}
-            placeholder={
-              disabled
-                ? 'Дождитесь завершения обработки документа...'
-                : 'Спросите что-нибудь о содержании документа...'
-            }
+            aria-label={t('askPlaceholder')}
+            placeholder={disabled ? t('waitProcessing') : t('askPlaceholder')}
             className="flex-1 bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:bg-white focus:outline-none rounded-xl px-4 py-2.5 text-sm transition-colors disabled:opacity-60"
           />
 
@@ -189,7 +208,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
               className="inline-flex items-center gap-1.5 bg-rose-600 hover:bg-rose-700 text-white font-medium px-4 py-2.5 rounded-xl text-sm transition-colors"
             >
               <Square className="w-4 h-4 fill-current" />
-              Стоп
+              {t('stop')}
             </button>
           ) : (
             <button
@@ -198,7 +217,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({
               className="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-medium px-4 py-2.5 rounded-xl text-sm transition-colors"
             >
               <Send className="w-4 h-4" />
-              Спросить
+              {t('send')}
             </button>
           )}
         </form>

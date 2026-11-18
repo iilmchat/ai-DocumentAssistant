@@ -9,6 +9,7 @@
    - [Быстрый старт и настройка окружения](development/getting-started.md)
    - [Руководство по Backend](development/backend-guide.md)
    - [Руководство по Frontend](development/frontend-guide.md)
+   - [Оценка качества RAG](development/rag-eval.md)
 3. **API (`/docs/openapi/`)**
    - [Спецификация эндпоинтов](openapi/endpoints.md)
 4. **Эксплуатация (`/docs/operations/`)**

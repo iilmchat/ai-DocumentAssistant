@@ -24,11 +24,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
       - name: Compile check
-        run: python -m compileall -q app tests alembic scripts
+        run: python -m compileall -q app tests alembic scripts eval
       - name: Ruff (lint + format)
         run: |
-          ruff check app tests alembic scripts
-          ruff format --check app tests alembic scripts
+          ruff check app tests alembic scripts eval
+          ruff format --check app tests alembic scripts eval
       - name: Mypy
         run: mypy app
       - name: Alembic migration check
@@ -37,6 +37,8 @@ jobs:
           alembic upgrade head --sql > /dev/null
       - name: Pytest (coverage >= 60%)
         run: python -m pytest -q
+      - name: RAG offline eval
+        run: python -m eval.rag_eval --offline
       - name: Dependency audit
         run: pip-audit -r requirements.txt
 

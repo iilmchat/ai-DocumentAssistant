@@ -60,6 +60,69 @@ class OCREngine(ABC):
                 os.unlink(pdf_path)
 
 
+def detect_language(text: str) -> str:
+    """S5: эвристика выбора языков Tesseract по доле кириллицы."""
+    letters = [ch for ch in text if ch.isalpha()]
+    if not letters:
+        return "rus+eng"
+    cyrillic = sum(1 for ch in letters if "А" <= ch <= "я" or ch in "Ёё")
+    return "rus+eng" if cyrillic / len(letters) > 0.2 else "eng"
+
+
+class PaddleEngine(OCREngine):
+    """S5: альтернатива Tesseract на PaddleOCR (опциональная зависимость)."""
+
+    def __init__(self, languages: str = "rus+eng"):
+        self.languages = languages
+
+    def available(self) -> bool:
+        try:
+            import paddleocr  # noqa: F401
+
+            return True
+        except ImportError:
+            return False
+
+    def ocr_pdf_page(self, pdf_path: str, page_index: int) -> tuple[str, float]:
+        try:
+            import numpy as np
+            from paddleocr import PaddleOCR
+
+            from app.services.pymupdf_compat import fitz
+        except ImportError as exc:
+            raise RuntimeError("PaddleOCR не установлен: pip install paddleocr") from exc
+
+        langs = detect_language(self.languages) if self.languages == "auto" else self.languages
+        ocr = PaddleOCR(lang="ru" if "rus" in langs else "en")
+        doc = fitz.open(pdf_path)
+        try:
+            pix = doc.load_page(page_index).get_pixmap(dpi=300)
+            image = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
+        finally:
+            doc.close()
+        result = ocr.ocr(image)
+        texts = [
+            line[1][0] for page in (result or []) for line in (page or []) if line and len(line) > 1
+        ]
+        text = " ".join(texts).strip()
+        return text, (0.8 if text else 0.0)
+
+
+class SuryaEngine(OCREngine):
+    """S5: Surya OCR (опциональная зависимость) — заготовка с понятной ошибкой."""
+
+    def available(self) -> bool:
+        try:
+            import surya_ocr  # noqa: F401
+
+            return True
+        except ImportError:
+            return False
+
+    def ocr_pdf_page(self, pdf_path: str, page_index: int) -> tuple[str, float]:
+        raise RuntimeError("Surya OCR требует отдельного сервиса/зависимостей — пока не подключён")
+
+
 class TesseractEngine(OCREngine):
     """Baseline: Tesseract 5 с rus+eng. Предобработка (deskew/denoise) — через ocrmypdf,
     если он установлен в образе воркера; иначе — прямой pytesseract по растру страницы."""
@@ -84,6 +147,14 @@ class TesseractEngine(OCREngine):
         finally:
             doc.close()
 
+        languages = self.LANGUAGES
+        if languages == "auto":
+            # S5: быстрый eng-проход для определения алфавита, затем основной OCR
+            probe, _ = self._tesseract_from_image(image_bytes, "eng")
+            languages = detect_language(probe)
+        return self._tesseract_from_image(image_bytes, languages)
+
+    def _tesseract_from_image(self, image_bytes: bytes, languages: str) -> tuple[str, float]:
         try:
             import io
 
@@ -92,7 +163,7 @@ class TesseractEngine(OCREngine):
 
             img = Image.open(io.BytesIO(image_bytes))
             data = pytesseract.image_to_data(
-                img, lang=self.LANGUAGES, output_type=pytesseract.Output.DICT
+                img, lang=languages, output_type=pytesseract.Output.DICT
             )
             words: list[str] = []
             confs: list[float] = []
@@ -121,7 +192,7 @@ class TesseractEngine(OCREngine):
                 tmp_path = tmp.name
             try:
                 proc = subprocess.run(
-                    ["tesseract", tmp_path, "stdout", "-l", self.LANGUAGES, "--psm", "3"],
+                    ["tesseract", tmp_path, "stdout", "-l", languages, "--psm", "3"],
                     capture_output=True,
                     text=True,
                     timeout=120,
@@ -214,5 +285,8 @@ def get_ocr_engine(name: str | None = None) -> OCREngine:
         return TesseractEngine(settings.OCR_LANGUAGES)
     if name == "vision":
         return VisionEngine()
-    # сюда позже добавляются paddle / surya — per-document переключение
+    if name == "paddle":
+        return PaddleEngine(settings.OCR_LANGUAGES)
+    if name == "surya":
+        return SuryaEngine()
     raise ValueError(f"Неизвестный OCR-движок: {name}")

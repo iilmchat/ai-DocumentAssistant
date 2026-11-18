@@ -15,6 +15,8 @@ CELERY_TASKS = Counter("celery_tasks_total", "Celery tasks", ["task", "status"])
 CELERY_LATENCY = Histogram("celery_task_duration_seconds", "Celery task duration", ["task"])
 RAG_QUERIES = Counter("rag_queries_total", "RAG queries")
 SEARCH_LATENCY = Histogram("vector_search_duration_seconds", "Vector search duration")
+RERANK_LATENCY = Histogram("rerank_duration_seconds", "LLM reranking duration")
+LLM_COST_USD = Counter("llm_cost_usd_total", "Estimated LLM cost in USD")
 DOCS_BY_STATUS = Gauge("documents_by_status", "Documents by status", ["status"])
 
 

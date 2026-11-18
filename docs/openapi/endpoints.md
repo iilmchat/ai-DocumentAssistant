@@ -78,6 +78,12 @@
 ### `POST /api/v1/chat/stream`
 То же, что `/ask`, но ответ стримится через SSE: события `citations` (массив цитат), `token` (`{"delta": "..."}`), `done` / `error`.
 
+### `GET /api/v1/documents/{id}/pages`
+Постраничный текст с методом извлечения и confidence (используется вкладкой «Страницы» и цитатами).
+
+### `GET /api/v1/auth/usage`
+Сводка токенов и оценочной стоимости LLM за текущего пользователя (`requests`, `total_tokens`, `estimated_cost_usd`, `over_budget`, `last`).
+
 ### `POST /api/v1/documents/{id}/summarize/stream`
 S3: стриминг генерации конспекта. События `token` (`{"delta": "..."}`) и `done`. После завершения
 сохраняется новая версия конспекта.

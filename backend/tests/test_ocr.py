@@ -6,7 +6,14 @@ import pytest
 from PIL import Image
 
 from app.core.config import settings
-from app.services.ocr import TesseractEngine, VisionEngine, get_ocr_engine
+from app.services.ocr import (
+    PaddleEngine,
+    SuryaEngine,
+    TesseractEngine,
+    VisionEngine,
+    detect_language,
+    get_ocr_engine,
+)
 
 
 def _png_bytes() -> bytes:
@@ -20,6 +27,17 @@ def test_engine_factory():
     assert isinstance(get_ocr_engine("vision"), VisionEngine)
     with pytest.raises(ValueError, match="Неизвестный OCR-движок"):
         get_ocr_engine("unknown")
+
+
+def test_language_autodetect():
+    assert detect_language("Это русский текст с кириллицей") == "rus+eng"
+    assert detect_language("This is an English text") == "eng"
+    assert detect_language("") == "rus+eng"
+
+
+def test_optional_engines_factory():
+    assert isinstance(get_ocr_engine("paddle"), PaddleEngine)
+    assert isinstance(get_ocr_engine("surya"), SuryaEngine)
 
 
 def test_tesseract_availability():

@@ -65,6 +65,14 @@ class Settings(BaseSettings):
     HNSW_EF_SEARCH: int = 80
     EMBEDDING_CACHE_TTL_SECONDS: int = 3600
 
+    # --- S5: реранкинг и стоимость LLM ---
+    RERANK_ENABLED: bool = True
+    RERANK_MODEL: str = ""  # пусто = LLM_MODEL
+    LLM_COST_PER_1K_INPUT: float = 0.0  # USD, заполняется под конкретный тариф
+    LLM_COST_PER_1K_OUTPUT: float = 0.0
+    LLM_MONTHLY_BUDGET_USD: float = 100.0
+    PROMPT_VERSION: str = "v1"
+
     # --- Пул БД и конкуренция LLM (S3) ---
     DB_POOL_SIZE: int = 10
     DB_MAX_OVERFLOW: int = 20

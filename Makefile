@@ -3,10 +3,11 @@
 check: backend-check frontend-check
 
 backend-check:
-	cd backend && ruff check app tests alembic scripts
-	cd backend && ruff format --check app tests alembic scripts
+	cd backend && ruff check app tests alembic scripts eval
+	cd backend && ruff format --check app tests alembic scripts eval
 	cd backend && mypy app
 	cd backend && pytest -q
+	cd backend && python -m eval.rag_eval --offline
 	cd backend && pip-audit -r requirements.txt
 
 frontend-check:
@@ -17,8 +18,8 @@ frontend-check:
 format: backend-format frontend-format
 
 backend-format:
-	cd backend && ruff check app tests alembic scripts --fix
-	cd backend && ruff format app tests alembic scripts
+	cd backend && ruff check app tests alembic scripts eval --fix
+	cd backend && ruff format app tests alembic scripts eval
 
 frontend-format:
 	cd frontend && npm run lint:fix

@@ -94,6 +94,29 @@ class DocumentChunk(Base):
     __table_args__ = (Index("ix_document_chunks_search", "search_vector", postgresql_using="gin"),)
 
 
+class TokenUsage(Base):
+    """S5: учёт токенов и стоимости LLM на запрос."""
+
+    __tablename__ = "token_usages"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    document_id = Column(
+        UUID(as_uuid=True), ForeignKey("documents.id", ondelete="SET NULL"), nullable=True
+    )
+    operation = Column(String(32), nullable=False)
+    model = Column(String(128), nullable=False)
+    prompt_tokens = Column(Integer, nullable=False, default=0)
+    completion_tokens = Column(Integer, nullable=False, default=0)
+    total_tokens = Column(Integer, nullable=False, default=0)
+    cost_usd = Column(String(32), nullable=True)  # строка для переносимости
+    created_at = Column(TIMESTAMP(timezone=True), server_default=text("CURRENT_TIMESTAMP"))
+    __table_args__ = (
+        Index("ix_token_usages_user", "user_id"),
+        Index("ix_token_usages_created", "created_at"),
+    )
+
+
 class AuditLog(Base):
     """S1: журнал действий пользователя (кто/что/когда/откуда)."""
 

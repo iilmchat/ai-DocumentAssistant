@@ -16,6 +16,7 @@ REQUIRED_TABLES = {
     "document_chunks",
     "summary_versions",
     "audit_logs",
+    "token_usages",
     "alembic_version",
 }
 

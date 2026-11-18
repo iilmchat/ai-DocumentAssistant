@@ -32,3 +32,11 @@ groups:
           severity: critical
         annotations:
           summary: "Circuit breaker LLM открыт — провайдер недоступен"
+
+      - alert: HighLLMTokenBurn
+        expr: sum(rate(llm_tokens_total[1h])) > 500
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Расход токенов >500/ч — проверьте /auth/usage и бюджет"

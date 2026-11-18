@@ -25,7 +25,7 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
-from app.models.models import AuditLog, User
+from app.models.models import AuditLog, TokenUsage, User
 from app.services.audit import log_action
 
 router = APIRouter(prefix="/api/v1/auth", tags=["Auth"])
@@ -193,6 +193,43 @@ async def logout(
 @router.get("/me", response_model=UserResponse)
 async def me(current_user: User = Depends(get_current_user)):
     return current_user
+
+
+@router.get("/usage")
+async def token_usage(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """S5: сводка токенов и стоимости для текущего пользователя."""
+    rows = (
+        (
+            await db.execute(
+                select(TokenUsage)
+                .where(TokenUsage.user_id == current_user.id)
+                .order_by(TokenUsage.created_at.desc())
+                .limit(500)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    cost = sum(float(row.cost_usd or 0) for row in rows)
+    return {
+        "requests": len(rows),
+        "total_tokens": sum(row.total_tokens for row in rows),
+        "estimated_cost_usd": round(cost, 6),
+        "over_budget": cost > settings.LLM_MONTHLY_BUDGET_USD,
+        "last": [
+            {
+                "operation": row.operation,
+                "model": row.model,
+                "total_tokens": row.total_tokens,
+                "cost_usd": row.cost_usd,
+                "created_at": row.created_at.isoformat(),
+            }
+            for row in rows[:20]
+        ],
+    }
 
 
 @router.get("/audit-log", response_model=list[AuditLogResponse])

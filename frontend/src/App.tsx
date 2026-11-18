@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { BookOpen, MessageSquare, FileText, AlertCircle, LogOut } from 'lucide-react'
+import { BookOpen, MessageSquare, FileText, AlertCircle, LogOut, Files } from 'lucide-react'
 import { useDocuments } from './hooks/useDocuments'
 import { useDocumentChat } from './hooks/useDocumentChat'
 import { useAuth } from './hooks/useAuth'
@@ -8,8 +8,10 @@ import { UserInfo } from './types'
 import { Sidebar } from './components/Sidebar'
 import { SummaryViewer } from './components/SummaryViewer'
 import { ChatPanel } from './components/ChatPanel'
+import { PagesViewer } from './components/PagesViewer'
+import { useI18n } from './i18n'
 
-type ActiveTab = 'summary' | 'chat'
+type ActiveTab = 'summary' | 'chat' | 'pages'
 
 function MainApp({ user, onLogout }: { user: UserInfo; onLogout: () => void }) {
   const { documents, isLoading, isUploading, error, uploadFile, removeDocument, refresh } =
@@ -17,6 +19,8 @@ function MainApp({ user, onLogout }: { user: UserInfo; onLogout: () => void }) {
 
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<ActiveTab>('summary')
+  const [focusedPage, setFocusedPage] = useState<number | null>(null)
+  const { t } = useI18n()
 
   useEffect(() => {
     if (!selectedDocId && documents.length > 0) {
@@ -62,13 +66,8 @@ function MainApp({ user, onLogout }: { user: UserInfo; onLogout: () => void }) {
             <div className="w-16 h-16 rounded-2xl bg-white border border-slate-200 shadow-xs flex items-center justify-center mb-4">
               <FileText className="w-8 h-8 text-indigo-500" />
             </div>
-            <h2 className="text-lg font-semibold text-slate-900">
-              Выберите или загрузите документ
-            </h2>
-            <p className="text-sm text-slate-500 max-w-md mt-1">
-              Загрузите PDF, DOCX или TXT файл в меню слева, чтобы автоматически получить его умный
-              конспект и задать вопросы в RAG-чате.
-            </p>
+            <h2 className="text-lg font-semibold text-slate-900">{t('selectDoc')}</h2>
+            <p className="text-sm text-slate-500 max-w-md mt-1">{t('selectDocHint')}</p>
           </div>
         ) : (
           <>
@@ -84,6 +83,7 @@ function MainApp({ user, onLogout }: { user: UserInfo; onLogout: () => void }) {
                   <button
                     onClick={onLogout}
                     title="Выйти"
+                    aria-label="Выйти"
                     className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md"
                   >
                     <LogOut className="w-4 h-4" />
@@ -91,8 +91,10 @@ function MainApp({ user, onLogout }: { user: UserInfo; onLogout: () => void }) {
                 </div>
               </div>
 
-              <div className="flex gap-6">
+              <div className="flex gap-6" role="tablist" aria-label="Document sections">
                 <button
+                  role="tab"
+                  aria-selected={activeTab === 'summary'}
                   onClick={() => setActiveTab('summary')}
                   className={`pb-3 text-sm font-medium border-b-2 transition-colors inline-flex items-center gap-2 ${
                     activeTab === 'summary'
@@ -101,10 +103,12 @@ function MainApp({ user, onLogout }: { user: UserInfo; onLogout: () => void }) {
                   }`}
                 >
                   <BookOpen className="w-4 h-4" />
-                  Умный конспект
+                  {t('summaryTab')}
                 </button>
 
                 <button
+                  role="tab"
+                  aria-selected={activeTab === 'chat'}
                   onClick={() => setActiveTab('chat')}
                   className={`pb-3 text-sm font-medium border-b-2 transition-colors inline-flex items-center gap-2 ${
                     activeTab === 'chat'
@@ -113,7 +117,21 @@ function MainApp({ user, onLogout }: { user: UserInfo; onLogout: () => void }) {
                   }`}
                 >
                   <MessageSquare className="w-4 h-4" />
-                  Чат по документу
+                  {t('chatTab')}
+                </button>
+
+                <button
+                  role="tab"
+                  aria-selected={activeTab === 'pages'}
+                  onClick={() => setActiveTab('pages')}
+                  className={`pb-3 text-sm font-medium border-b-2 transition-colors inline-flex items-center gap-2 ${
+                    activeTab === 'pages'
+                      ? 'border-indigo-600 text-indigo-600'
+                      : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <Files className="w-4 h-4" />
+                  {t('pagesTab')}
                 </button>
               </div>
             </header>
@@ -121,6 +139,8 @@ function MainApp({ user, onLogout }: { user: UserInfo; onLogout: () => void }) {
             <div className="flex-1 overflow-y-auto">
               {activeTab === 'summary' ? (
                 <SummaryViewer document={selectedDoc} onUpdated={refresh} />
+              ) : activeTab === 'pages' ? (
+                <PagesViewer documentId={selectedDoc.id} focusedPage={focusedPage} />
               ) : (
                 <ChatPanel
                   documentTitle={selectedDoc.title}
@@ -129,6 +149,10 @@ function MainApp({ user, onLogout }: { user: UserInfo; onLogout: () => void }) {
                   isSending={isSending}
                   onSendMessage={sendMessage}
                   onStopGeneration={stopGeneration}
+                  onPageClick={(page) => {
+                    setFocusedPage(page)
+                    setActiveTab('pages')
+                  }}
                 />
               )}
             </div>

@@ -12,6 +12,8 @@ class ExportData:
     title: str
     summary: str
     created_at: datetime | None = None
+    # S5: Приложение с постраничными источниками
+    sources: list[dict] | None = None
 
 
 def _plain(text: str) -> str:
@@ -28,7 +30,7 @@ class _Line:
     kind: str  # title | heading | bullet | paragraph | space
 
 
-def _parse(summary: str, title: str) -> list[_Line]:
+def _parse(summary: str, title: str, sources: list[dict] | None = None) -> list[_Line]:
     lines: list[_Line] = [_Line(title, "title")]
     for raw in (summary or "").splitlines():
         line = raw.rstrip()
@@ -40,6 +42,16 @@ def _parse(summary: str, title: str) -> list[_Line]:
             lines.append(_Line(_plain(re.sub(r"^\s*([-*+]|\d+[.)])\s+", "", line)), "bullet"))
         else:
             lines.append(_Line(_plain(line), "paragraph"))
+
+    if sources:
+        lines.append(_Line("", "space"))
+        lines.append(_Line("Источники по страницам", "heading"))
+        for source in sources:
+            label = (
+                f"Стр. {source.get('page', '?')} ({source.get('extraction_method', 'text_layer')})"
+            )
+            snippet = str(source.get("snippet", ""))[:300]
+            lines.append(_Line(f"{label}: {snippet}", "bullet"))
     return lines
 
 
@@ -47,7 +59,16 @@ def render_markdown(data: ExportData) -> bytes:
     header = f"# {data.title}\n"
     if data.created_at:
         header += f"\n_Создан: {data.created_at.strftime('%Y-%m-%d %H:%M')}_\n"
-    return (header + "\n" + (data.summary or "") + "\n").encode("utf-8")
+    body = header + "\n" + (data.summary or "") + "\n"
+    if data.sources:
+        body += "\n## Источники по страницам\n\n"
+        for source in data.sources:
+            body += (
+                f"- Стр. {source.get('page', '?')} "
+                f"({source.get('extraction_method', 'text_layer')}): "
+                f"{str(source.get('snippet', ''))[:300]}\n"
+            )
+    return body.encode("utf-8")
 
 
 def render_docx(data: ExportData) -> bytes:
@@ -55,7 +76,7 @@ def render_docx(data: ExportData) -> bytes:
     from docx.shared import Pt
 
     doc = Document()
-    for line in _parse(data.summary, data.title):
+    for line in _parse(data.summary, data.title, data.sources):
         if line.kind == "title":
             doc.add_heading(line.text, level=0)
         elif line.kind == "heading":
@@ -131,7 +152,7 @@ def render_pdf(data: ExportData) -> bytes:
                 page.insert_font(fontname=fontname, fontfile=font_path)
             y = margin_y
 
-    for line in _parse(data.summary, data.title):
+    for line in _parse(data.summary, data.title, data.sources):
         if line.kind == "space":
             y += 6
             continue

@@ -1,5 +1,6 @@
 import asyncio
 import time
+from contextvars import ContextVar
 
 from openai import AsyncOpenAI
 from tenacity import (
@@ -14,6 +15,7 @@ from app.core.cache import get_cached_embedding, set_cached_embedding
 from app.core.circuit_breaker import CircuitBreaker, CircuitOpenError
 from app.core.config import settings
 from app.core.metrics import LLM_CALLS, LLM_LATENCY, LLM_TOKENS
+from app.core.prompts import render
 
 client = AsyncOpenAI(
     api_key=settings.OPENAI_API_KEY,
@@ -22,6 +24,14 @@ client = AsyncOpenAI(
 )
 
 llm_breaker = CircuitBreaker("llm", failure_threshold=5, cooldown_seconds=60)
+
+# S5: последнее usage каждого LLM-вызова (для учёта стоимости в роутере)
+_last_usage: ContextVar[dict | None] = ContextVar("llm_last_usage", default=None)
+
+
+def get_last_usage() -> dict | None:
+    return _last_usage.get()
+
 
 # Semaphore привязан к event loop: воркер создаёт новый loop на задачу
 _llm_semaphores: dict[int, asyncio.Semaphore] = {}
@@ -50,6 +60,14 @@ async def _resilient_call(breaker: CircuitBreaker, operation: str, func, *args, 
         tokens = getattr(usage, "total_tokens", None) if usage else None
         if tokens:
             LLM_TOKENS.labels(operation).inc(tokens)
+            _last_usage.set(
+                {
+                    "prompt_tokens": getattr(usage, "prompt_tokens", 0) or 0,
+                    "completion_tokens": getattr(usage, "completion_tokens", 0) or 0,
+                    "total_tokens": tokens,
+                    "model": getattr(result, "model", settings.LLM_MODEL),
+                }
+            )
         LLM_CALLS.labels(operation, "success").inc()
         return result
     except CircuitOpenError:
@@ -113,11 +131,8 @@ async def summarize_text_block(text_block: str) -> str:
         client.chat.completions.create,
         model=settings.LLM_MODEL,
         messages=[
-            {
-                "role": "system",
-                "content": "Ты аналитик. Сожми предоставленный текст в краткую, плотную выжимку (не более 3-4 предложений), сохранив только ключевые факты, цифры и имена.",
-            },
-            {"role": "user", "content": f"Сделай выжимку из этого текста:\n\n{text_block}"},
+            {"role": "system", "content": render("summary_map_system")},
+            {"role": "user", "content": render("summary_user", text=text_block)},
         ],
         temperature=0.1,
         max_tokens=500,
@@ -138,10 +153,7 @@ async def combine_summaries(summaries: list[str]) -> str:
         client.chat.completions.create,
         model=settings.LLM_MODEL,
         messages=[
-            {
-                "role": "system",
-                "content": "Ты профессиональный редактор. На основе предоставленных выжимок из разных частей документа составь единый, логичный и структурированный умный конспект. Используй маркдаун списки и выделения.",
-            },
+            {"role": "system", "content": render("summary_reduce_system")},
             {
                 "role": "user",
                 "content": f"Выжимки из документа:\n{combined_text}\n\nСоставь финальный конспект:",
@@ -167,11 +179,8 @@ async def generate_document_summary_from_chunks(chunks: list[str]) -> str:
             client.chat.completions.create,
             model=settings.LLM_MODEL,
             messages=[
-                {
-                    "role": "system",
-                    "content": "Составь подробный и структурированный умный конспект по предоставленному тексту.",
-                },
-                {"role": "user", "content": f"Текст документа:\n{full_context}"},
+                {"role": "system", "content": render("summary_direct_system")},
+                {"role": "user", "content": render("summary_direct_user", text=full_context)},
             ],
             temperature=0.3,
             max_tokens=2000,
@@ -212,11 +221,8 @@ async def stream_document_summary(full_text: str):
         client.chat.completions.create,
         model=settings.LLM_MODEL,
         messages=[
-            {
-                "role": "system",
-                "content": "Ты профессиональный аналитик. Составь четкий структурированный конспект в Markdown.",
-            },
-            {"role": "user", "content": f"Текст документа:\n{context}"},
+            {"role": "system", "content": render("summary_stream_system")},
+            {"role": "user", "content": render("summary_stream_user", text=context)},
         ],
         temperature=0.3,
         stream=True,

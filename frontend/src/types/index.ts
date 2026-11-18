@@ -27,6 +27,13 @@ export interface DocumentItem {
   created_at: string
 }
 
+export interface PageItem {
+  page_number: number
+  text: string
+  extraction_method: string
+  confidence: number
+}
+
 export interface DocumentList {
   items: DocumentItem[]
   total: number

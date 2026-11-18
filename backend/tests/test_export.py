@@ -33,3 +33,15 @@ def test_pdf_is_valid():
     content = render_pdf(_data())
     assert content.startswith(b"%PDF")
     assert len(content) > 1000
+
+
+def test_markdown_includes_page_sources():
+    data = ExportData(
+        title="Отчёт",
+        summary="Кратко",
+        sources=[{"page": 3, "extraction_method": "ocr", "snippet": "текст со скана"}],
+    )
+    content = render_markdown(data).decode("utf-8")
+    assert "Источники по страницам" in content
+    assert "Стр. 3" in content
+    assert "текст со скана" in content

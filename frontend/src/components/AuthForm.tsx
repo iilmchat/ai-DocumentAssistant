@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { Sparkles, LogIn, UserPlus, Loader2, AlertCircle } from 'lucide-react'
 import { apiClient, tokenStore } from '../api/client'
+import { useI18n } from '../i18n'
 
 interface AuthFormProps {
   onAuthenticated: () => void
@@ -12,6 +13,7 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onAuthenticated }) => {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const { t, lang, setLang } = useI18n()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -39,13 +41,21 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onAuthenticated }) => {
             <Sparkles className="w-5 h-5" />
           </div>
           <div>
-            <h1 className="font-semibold text-slate-900">AI Конспект</h1>
-            <p className="text-xs text-slate-500">Анализ документов и RAG-чат</p>
+            <h1 className="font-semibold text-slate-900">{t('appName')}</h1>
+            <p className="text-xs text-slate-500">{t('appSubtitle')}</p>
           </div>
+          <button
+            type="button"
+            onClick={() => setLang(lang === 'ru' ? 'en' : 'ru')}
+            aria-label="Switch language"
+            className="ml-auto text-xs font-semibold text-indigo-600 border border-indigo-200 rounded px-2 py-1"
+          >
+            {lang.toUpperCase()}
+          </button>
         </div>
 
         <h2 className="text-lg font-semibold text-slate-900 mb-1">
-          {mode === 'login' ? 'С возвращением' : 'Создать аккаунт'}
+          {mode === 'login' ? t('loginTitle') : t('registerTitle')}
         </h2>
         <p className="text-sm text-slate-500 mb-5">
           {mode === 'login'
@@ -72,7 +82,9 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onAuthenticated }) => {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1.5">Пароль</label>
+            <label className="block text-xs font-medium text-slate-600 mb-1.5">
+              {t('password')}
+            </label>
             <input
               type="password"
               required
@@ -95,7 +107,7 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onAuthenticated }) => {
             ) : (
               <UserPlus className="w-4 h-4" />
             )}
-            {mode === 'login' ? 'Войти' : 'Зарегистрироваться'}
+            {mode === 'login' ? t('login') : t('register')}
           </button>
         </form>
 
@@ -106,7 +118,7 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onAuthenticated }) => {
           }}
           className="w-full mt-4 text-sm text-indigo-600 hover:text-indigo-700"
         >
-          {mode === 'login' ? 'Нет аккаунта? Зарегистрироваться' : 'Уже есть аккаунт? Войти'}
+          {mode === 'login' ? t('toRegister') : t('toLogin')}
         </button>
       </div>
     </div>

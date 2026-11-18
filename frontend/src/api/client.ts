@@ -2,6 +2,7 @@ import {
   AuthResponse,
   DocumentItem,
   DocumentList,
+  PageItem,
   ChatResponse,
   SourceCitation,
   SummaryVersion,
@@ -169,6 +170,12 @@ export const apiClient = {
     link.click()
     link.remove()
     URL.revokeObjectURL(url)
+  },
+
+  async getPages(documentId: string): Promise<PageItem[]> {
+    const response = await authFetch(`${API_BASE_URL}/api/v1/documents/${documentId}/pages`)
+    if (!response.ok) throw new Error('Не удалось загрузить страницы')
+    return response.json()
   },
 
   async listVersions(documentId: string): Promise<SummaryVersion[]> {

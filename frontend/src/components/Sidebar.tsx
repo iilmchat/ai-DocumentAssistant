@@ -10,6 +10,7 @@ import {
   Sparkles,
 } from 'lucide-react'
 import { DocumentItem, DocumentStatus } from '../types'
+import { useI18n } from '../i18n'
 
 interface SidebarProps {
   documents: DocumentItem[]
@@ -22,29 +23,31 @@ interface SidebarProps {
 }
 
 const StatusBadge: React.FC<{ status: DocumentStatus }> = ({ status }) => {
+  const { t } = useI18n()
   switch (status) {
     case 'completed':
       return (
         <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
-          <CheckCircle2 className="w-3 h-3" /> Готов
+          <CheckCircle2 className="w-3 h-3" /> {t('good')}
         </span>
       )
     case 'processing':
+    case 'embedding':
       return (
         <span className="inline-flex items-center gap-1 text-xs font-medium text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full">
-          <Loader2 className="w-3 h-3 animate-spin" /> Анализ...
+          <Loader2 className="w-3 h-3 animate-spin" /> {t('analyzing')}
         </span>
       )
     case 'pending':
       return (
         <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
-          <Clock className="w-3 h-3" /> В очереди
+          <Clock className="w-3 h-3" /> {t('queued')}
         </span>
       )
     case 'failed':
       return (
         <span className="inline-flex items-center gap-1 text-xs font-medium text-rose-700 bg-rose-50 px-2 py-0.5 rounded-full">
-          <AlertCircle className="w-3 h-3" /> Ошибка
+          <AlertCircle className="w-3 h-3" /> {t('failed')}
         </span>
       )
   }
@@ -60,6 +63,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onDelete,
 }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const { t, lang, setLang } = useI18n()
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -76,9 +80,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <Sparkles className="w-5 h-5" />
         </div>
         <div>
-          <h1 className="font-semibold text-slate-900 leading-tight">AI Конспект</h1>
-          <p className="text-xs text-slate-500">Умный анализ и RAG-чат</p>
+          <h1 className="font-semibold text-slate-900 leading-tight">{t('appName')}</h1>
+          <p className="text-xs text-slate-500">{t('appSubtitle')}</p>
         </div>
+        <button
+          onClick={() => setLang(lang === 'ru' ? 'en' : 'ru')}
+          aria-label="Switch language"
+          className="ml-auto text-xs font-semibold text-indigo-600 border border-indigo-200 rounded px-2 py-1"
+        >
+          {lang.toUpperCase()}
+        </button>
       </div>
 
       <div className="p-4">
@@ -97,23 +108,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {isUploading ? (
             <>
               <Loader2 className="w-4 h-4 animate-spin" />
-              Загрузка файла...
+              {t('uploading')}
             </>
           ) : (
             <>
               <Upload className="w-4 h-4" />
-              Загрузить документ
+              {t('upload')}
             </>
           )}
         </button>
-        <p className="text-[11px] text-center text-slate-400 mt-1.5">
-          PDF, DOCX, TXT, JPG, PNG, TIFF
-        </p>
+        <p className="text-[11px] text-center text-slate-400 mt-1.5">{t('formats')}</p>
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 pb-4 space-y-1.5 max-h-60 md:max-h-none">
         <div className="px-2 py-1 text-xs font-semibold uppercase tracking-wider text-slate-400">
-          Ваши документы ({documents.length})
+          {t('yourDocs')} ({documents.length})
         </div>
 
         {isLoading ? (
@@ -123,8 +132,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         ) : documents.length === 0 ? (
           <div className="text-center py-8 px-4 border border-dashed border-slate-200 rounded-lg">
             <FileText className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-            <p className="text-sm text-slate-500">Документов пока нет</p>
-            <p className="text-xs text-slate-400 mt-0.5">Загрузите первый файл для конспекта</p>
+            <p className="text-sm text-slate-500">{t('noDocs')}</p>
+            <p className="text-xs text-slate-400 mt-0.5">{t('noDocsHint')}</p>
           </div>
         ) : (
           documents.map((doc) => {
@@ -132,8 +141,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
             return (
               <div
                 key={doc.id}
+                role="button"
+                tabIndex={0}
+                aria-pressed={isSelected}
+                aria-label={`${doc.title} — ${doc.status}`}
                 onClick={() => onSelect(doc.id)}
-                className={`group flex items-start justify-between gap-2 p-3 rounded-lg cursor-pointer transition-all border ${
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    onSelect(doc.id)
+                  }
+                }}
+                className={`group flex items-start justify-between gap-2 p-3 rounded-lg cursor-pointer transition-all border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
                   isSelected
                     ? 'bg-indigo-50/70 border-indigo-200 shadow-xs'
                     : 'bg-white border-transparent hover:bg-slate-50 hover:border-slate-200'
@@ -166,6 +185,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     onDelete(doc.id)
                   }}
                   title="Удалить документ"
+                  aria-label="Удалить документ"
                   className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-all"
                 >
                   <Trash2 className="w-4 h-4" />

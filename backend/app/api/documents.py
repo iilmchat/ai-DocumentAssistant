@@ -342,7 +342,33 @@ async def export_summary(
     if not doc.summary:
         raise HTTPException(status_code=404, detail="Конспект ещё не сгенерирован.")
 
-    data = ExportData(title=doc.title, summary=doc.summary, created_at=doc.created_at)
+    # S5: приложим постраничные источники к экспорту
+    pages = (
+        (
+            await db.execute(
+                select(DocumentPage)
+                .where(DocumentPage.document_id == doc.id)
+                .order_by(DocumentPage.page_number)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    sources = [
+        {
+            "page": page.page_number,
+            "extraction_method": page.extraction_method,
+            "confidence": page.confidence,
+            "snippet": page.text[:300],
+        }
+        for page in pages[:200]
+    ]
+    data = ExportData(
+        title=doc.title,
+        summary=doc.summary,
+        created_at=doc.created_at,
+        sources=sources,
+    )
     media_types = {
         "md": "text/markdown; charset=utf-8",
         "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
