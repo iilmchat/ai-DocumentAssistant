@@ -59,7 +59,7 @@
 
 **Цель:** от «работает» к «измеримо улучшается».
 
-- `[~] P0` **T7-01** Скрипты готовы (`ops/scripts/smoke_stage.sh`, `load_test.sh`, `restore_drill.sh`), чек-лист в `docs/operations/stage-runbook.md`; фактический прогон — на стейдже `[?]`
+- `[~] P0` **T7-01** Restore drill выполнен на Docker Desktop (3 документа восстановлены); headless load-test ещё не прогонялся `[?]`. См. `docs/operations/docker-desktop-smoke.md`
 - `[x] P1` **T7-02** Онлайн RAG-оценка (лёгкие эвристики вместо тяжёлого RAGAS): `rag_faithfulness`, `rag_answer_relevance`, `rag_low_quality_total`, алерт `LowRagFaithfulness`
 - `[x] P1` **T7-03** Query rewriting через LLM (`rewrite_query`), включается фича-флагом `query_rewriting`, fallback на исходный вопрос
 - `[x] P1` **T7-04** Feature flags в Redis (`app/core/flags.py`): `query_rewriting`, `prompt_version`, `reranker`; A/B-прогон на реальных запросах — следующий шаг

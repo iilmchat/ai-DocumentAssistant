@@ -19,6 +19,7 @@ from celery import Celery
 from sqlalchemy import delete, func
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.future import select
+from sqlalchemy.pool import NullPool
 
 from app.core.cache import invalidate_embedding_cache
 from app.core.config import settings
@@ -62,12 +63,13 @@ celery_app.conf.beat_schedule = {
     }
 }
 
+# Celery prefork: каждая задача выполняется в новом event loop. Обычный пул
+# привязывает asyncpg-соединение к первому loop → "Future attached to a different loop".
+# NullPool создаёт соединение заново для каждого task — безопасно.
 engine = create_async_engine(
     settings.DATABASE_URL,
     future=True,
-    pool_size=settings.DB_POOL_SIZE,
-    max_overflow=settings.DB_MAX_OVERFLOW,
-    pool_pre_ping=settings.DB_POOL_PRE_PING,
+    poolclass=NullPool,
 )
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 

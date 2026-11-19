@@ -61,6 +61,7 @@ async def test_csrf_rejects_post_without_token():
     request.method = "POST"
     request.headers = {}
     request.cookies = {}
+    request.url.path = "/api/v1/documents"
     with pytest.raises(HTTPException) as exc:
         await csrf.enforce_csrf(request)
     assert exc.value.status_code == 403

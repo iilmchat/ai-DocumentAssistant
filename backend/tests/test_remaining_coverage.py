@@ -18,6 +18,19 @@ from app.services.file_validation import (
 )
 
 
+def test_sniff_mime_utf8_boundary():
+    """4096-й байт может оборвать кириллический символ — файл всё равно text/plain."""
+    prefix = b"a" * 4095
+    text = prefix + "Договор".encode() + b" " * 100
+    fd, path = tempfile.mkstemp()
+    with os.fdopen(fd, "wb") as f:
+        f.write(text)
+    try:
+        assert sniff_mime(path) == "text/plain"
+    finally:
+        os.unlink(path)
+
+
 def test_sniff_mime_signatures():
     cases = {
         b"%PDF-1.7": "application/pdf",

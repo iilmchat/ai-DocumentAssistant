@@ -59,7 +59,11 @@ def sniff_mime(path: str) -> str | None:
         sample = f.read(4096)
     if b"\x00" not in sample:
         try:
-            sample.decode("utf-8")
+            # Инкрементальный декодер не падает, если 4096-й байт оборвал
+            # многобайтовый символ (типично для русского текста).
+            import codecs
+
+            codecs.getincrementaldecoder("utf-8")().decode(sample, final=False)
             return "text/plain"
         except UnicodeDecodeError:
             pass

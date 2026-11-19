@@ -1,6 +1,7 @@
 import asyncio
 import time
 from contextvars import ContextVar
+from types import SimpleNamespace
 
 from openai import AsyncOpenAI
 from tenacity import (
@@ -85,7 +86,28 @@ async def _resilient_call(breaker: CircuitBreaker, operation: str, func, *args, 
         LLM_LATENCY.labels(operation).observe(time.perf_counter() - started)
 
 
+def _local_embeddings(texts: list[str]) -> list[list[float]]:
+    """Детерминированный вектор из SHA-256 текста — для офлайн-режима."""
+    import hashlib
+    import struct
+
+    vectors: list[list[float]] = []
+    for text in texts:
+        digest = hashlib.sha256(text.encode("utf-8")).digest()
+        floats = [
+            struct.unpack("<I", digest[i : i + 4])[0] / 0xFFFFFFFF
+            for i in range(0, min(len(digest), settings.EMBEDDING_DIM * 4), 4)
+        ]
+        vector = (floats * ((settings.EMBEDDING_DIM // len(floats)) + 1))[: settings.EMBEDDING_DIM]
+        vectors.append(vector)
+    return vectors
+
+
 async def _embeddings_call(texts: list[str]):
+    if settings.LOCAL_EMBEDDINGS:
+        return SimpleNamespace(
+            data=[SimpleNamespace(embedding=v) for v in _local_embeddings(texts)]
+        )
     try:
         return await client.embeddings.create(
             model=settings.EMBEDDING_MODEL,
@@ -240,6 +262,13 @@ async def stream_document_summary(full_text: str):
 
 async def generate_document_summary(full_text: str) -> str:
     """Совместимая обёртка для воркера: режет текст на чанки и зовёт Map/Reduce."""
+    if settings.LOCAL_EMBEDDINGS:
+        return (
+            "Автоматический конспект (офлайн-режим):\n\n"
+            + "\n".join(
+                f"- {line.strip()[:200]}" for line in full_text.splitlines() if line.strip()
+            )[:2000]
+        )
     if not full_text or not full_text.strip():
         return "Документ пуст."
 

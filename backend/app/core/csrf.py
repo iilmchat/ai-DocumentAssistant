@@ -33,6 +33,10 @@ async def enforce_csrf(request: Request) -> None:
         return
     if request.method in {"GET", "HEAD", "OPTIONS", "TRACE"}:
         return
+    # Логин/регистрация/refresh не подвержены классическому CSRF: до них нет сессии,
+    # а доступ подтверждён паролем или refresh-токеном. CSRF-cookie ещё может отсутствовать.
+    if request.url.path.startswith("/api/v1/auth/"):
+        return
     bearer = request.headers.get("authorization", "")
     if bearer.lower().startswith("bearer "):
         return  # Bearer-клиент не подвержен CSRF

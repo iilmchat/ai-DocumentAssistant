@@ -56,6 +56,8 @@ class Settings(BaseSettings):
     # --- Embeddings / поиск (Этап 5 / S3) ---
     EMBEDDING_MODEL: str = "text-embedding-3-large"
     EMBEDDING_DIM: int = 1024  # фиксируем размерность; менять через миграцию
+    # Локальный deterministic-эмбеддер для офлайн-разработки и smoke-тестов
+    LOCAL_EMBEDDINGS: bool = False
     RERANK_TOP_K: int = 50  # кандидатов перед реранкером
     RRF_K: int = 60  # параметр Reciprocal Rank Fusion
     # HNSW-индекс pgvector (миграция 0003)

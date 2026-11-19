@@ -61,13 +61,11 @@ async def _vector_search(
 
     started = time.perf_counter()
     if settings.USE_ANN_INDEX:
-        await db.execute(
-            sql_text("SET LOCAL hnsw.ef_search = :ef"),
-            {"ef": settings.HNSW_EF_SEARCH},
-        )
+        # SET LOCAL не принимает bind-параметры — подставляем int из конфига
+        await db.execute(sql_text(f"SET LOCAL hnsw.ef_search = {int(settings.HNSW_EF_SEARCH)}"))
     column = "embedding_translated" if translated else "embedding"
     # T6: при поиске по переводу отдаём переведённый текст в колонке content
-    content = "content_translated" if translated else "content"
+    content = "COALESCE(content_translated, content)" if translated else "content"
     rows = await db.execute(
         sql_text(f"""
         SELECT id, {content} AS content, page_numbers, headings, extraction_method
@@ -202,6 +200,13 @@ async def ask_question(
         )
 
     context, citations = prepared
+    if settings.LOCAL_EMBEDDINGS:
+        # офлайн-режим: отвечаем по найденному контексту без вызова LLM
+        answer = "Ответ по документу (офлайн-режим):\n" + context[:600]
+        evaluate_answer(payload.question, answer, context)
+        await db.commit()
+        return ChatResponse(answer=answer, sources=[c.snippet for c in citations], citations=citations)
+
     response = await _resilient_call(
         llm_breaker,
         "chat",

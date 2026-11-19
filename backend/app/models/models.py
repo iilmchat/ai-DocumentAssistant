@@ -67,8 +67,9 @@ class Document(Base):
     created_at = Column(TIMESTAMP(timezone=True), server_default=text("CURRENT_TIMESTAMP"))
     # S4: мягкое удаление — файл живёт grace-период, потом очищается retention-задачей
     deleted_at = Column(TIMESTAMP(timezone=True), nullable=True)
-    # T6: язык оригинала
+    # T6: язык оригинала и перевода
     language = Column(String(8), nullable=True)
+    translation_language = Column(String(8), nullable=True)
 
 
 class DocumentPage(Base):

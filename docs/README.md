@@ -19,6 +19,7 @@
    - [Нагрузочное тестирование](operations/load-test.md)
    - [Стейдж-прогон и учения](operations/stage-runbook.md)
    - [Масштабирование (T9)](operations/scaling.md)
+   - [Живой smoke на Docker Desktop](operations/docker-desktop-smoke.md)
    - [Backup и Restore](operations/backup-restore.md)
 5. **Безопасность (`/docs/security/`)**
    - [Управление ключами и доступом](security/security-overview.md)
