@@ -59,12 +59,12 @@
 
 **Цель:** от «работает» к «измеримо улучшается».
 
-- `[ ] P0` **T7-01** Закрыть отложенное: load-test (`S3-06`) и учения по restore (`S4-01`) на стейдже, отчёты в `docs/operations/`.
-- `[ ] P1` **T7-02** Online RAG-оценка: RAGAS/TruLens, логирование answer relevance / faithfulness в Prometheus + алерты на просадку.
-- `[ ] P1` **T7-03** Query rewriting и multi-query retrieval для сложных вопросов; сравнить с текущим RRF через offline-eval.
-- `[ ] P1` **T7-04** Feature flags для промптов и реранкера; A/B-прогон на реальных запросах, фиксация лучшей версии в `PROMPT_VERSION`.
-- `[ ] P2` **T7-05** Context compression (уменьшить токены → снизить стоимость), self-RAG / проверка «отвечай, только если уверен».
-- `[ ] P2` **T7-06** A/B-тест HNSW `ef_search` по фактическим замерам (после T7-01).
+- `[~] P0` **T7-01** Скрипты готовы (`ops/scripts/smoke_stage.sh`, `load_test.sh`, `restore_drill.sh`), чек-лист в `docs/operations/stage-runbook.md`; фактический прогон — на стейдже `[?]`
+- `[x] P1` **T7-02** Онлайн RAG-оценка (лёгкие эвристики вместо тяжёлого RAGAS): `rag_faithfulness`, `rag_answer_relevance`, `rag_low_quality_total`, алерт `LowRagFaithfulness`
+- `[x] P1` **T7-03** Query rewriting через LLM (`rewrite_query`), включается фича-флагом `query_rewriting`, fallback на исходный вопрос
+- `[x] P1` **T7-04** Feature flags в Redis (`app/core/flags.py`): `query_rewriting`, `prompt_version`, `reranker`; A/B-прогон на реальных запросах — следующий шаг
+- `[x] P2` **T7-05** Context compression (`build_context`) — обрезка длинных чанков, меньше токенов; self-RAG отложен до реальных замеров
+- `[~] P2` **T7-06** A/B-тест HNSW `ef_search` — зависит от фактического load-test (T7-01)
 
 **DoD:** есть дашборд с качеством ответов и ценой запроса; каждый change промпта подтверждён метрикой.
 

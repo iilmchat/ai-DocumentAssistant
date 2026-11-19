@@ -33,6 +33,14 @@ groups:
         annotations:
           summary: "Circuit breaker LLM открыт — провайдер недоступен"
 
+      - alert: LowRagFaithfulness
+        expr: rate(rag_low_quality_total[15m]) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Более 10% ответов ниже порога качества — проверьте контекст и промпты"
+
       - alert: HighLLMTokenBurn
         expr: sum(rate(llm_tokens_total[1h])) > 500
         for: 10m

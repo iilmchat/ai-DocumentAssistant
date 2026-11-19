@@ -17,6 +17,11 @@ class CircuitBreaker:
         self._opened_at = 0.0
         self._lock = asyncio.Lock()
 
+    def reset(self) -> None:
+        """Сбросить счётчик ошибок (например, после восстановления провайдера)."""
+        self._failures = 0
+        self._opened_at = 0.0
+
     @property
     def is_open(self) -> bool:
         if self._opened_at == 0.0:

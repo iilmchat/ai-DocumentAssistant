@@ -105,6 +105,41 @@
       ]
     },
     {
+      "id": 10,
+      "title": "RAG faithfulness (avg)",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 32 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(rag_faithfulness_sum[30m])) / sum(rate(rag_faithfulness_count[30m]))",
+          "legendFormat": "faithfulness"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "RAG answer relevance (avg)",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 32 },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(rag_answer_relevance_sum[30m])) / sum(rate(rag_answer_relevance_count[30m]))",
+          "legendFormat": "relevance"
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Low quality answers / sec",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 32 },
+      "targets": [
+        { "refId": "A", "expr": "rate(rag_low_quality_total[5m])", "legendFormat": "low quality" }
+      ]
+    },
+    {
       "id": 9,
       "title": "Estimated LLM cost (USD/s)",
       "type": "stat",

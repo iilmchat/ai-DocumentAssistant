@@ -20,6 +20,7 @@ from app.api.auth import get_current_user
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.errors import NotFoundError
+from app.core.flags import is_enabled
 from app.core.metrics import RAG_QUERIES, SEARCH_LATENCY
 from app.core.prompts import render
 from app.core.rate_limit import limiter
@@ -32,6 +33,9 @@ from app.services.ai_service import (
     generate_embeddings,
     llm_breaker,
 )
+from app.services.context import build_context
+from app.services.query_rewrite import rewrite_query
+from app.services.rag_eval import evaluate_answer
 from app.services.reranker import rerank_chunks
 from app.services.usage import record_usage
 
@@ -135,7 +139,13 @@ async def _retrieve_context(payload: ChatRequest, db: AsyncSession, current_user
 
     RAG_QUERIES.inc()
     fetch_k = max(settings.RERANK_TOP_K // 5, payload.top_k * 3)
-    q_embeddings = await generate_embeddings([payload.question])
+
+    # T7: опциональный query rewriting (управляется фича-флагом)
+    search_query = payload.question
+    if await is_enabled("query_rewriting"):
+        search_query = await rewrite_query(payload.question)
+
+    q_embeddings = await generate_embeddings([search_query])
     question_vector = ensure_embedding_dim(q_embeddings[0])
     vec_rows = await _vector_search(db, str(payload.document_id), str(question_vector), fetch_k)
     fts_rows = await _fts_search(db, str(payload.document_id), payload.question, fetch_k)
@@ -172,7 +182,7 @@ async def _retrieve_context(payload: ChatRequest, db: AsyncSession, current_user
             )
         )
 
-    return "\n\n---\n\n".join(context_parts), citations
+    return build_context(context_parts), citations
 
 
 @router.post("/ask", response_model=ChatResponse)
@@ -200,10 +210,12 @@ async def ask_question(
         messages=_messages(payload.question, context),
         temperature=0.2,
     )
+    answer = response.choices[0].message.content or ""
+    evaluate_answer(payload.question, answer, context)
     await record_usage(db, current_user.id, payload.document_id, "chat")
     await db.commit()
     return ChatResponse(
-        answer=response.choices[0].message.content or "",
+        answer=answer,
         sources=[c.snippet for c in citations],
         citations=citations,
     )

@@ -73,6 +73,12 @@ class Settings(BaseSettings):
     LLM_MONTHLY_BUDGET_USD: float = 100.0
     PROMPT_VERSION: str = "v1"
 
+    # --- T7: online RAG-оценка ---
+    RAG_EVAL_ENABLED: bool = True
+    RAG_EVAL_SAMPLE_RATE: float = 0.1  # доля запросов с detailed-оценкой
+    RAG_MIN_FAITHFULNESS: float = 0.5
+    RAG_MIN_ANSWER_RELEVANCE: float = 0.5
+
     # --- T6: двуязычные документы ---
     TRANSLATION_ENABLED: bool = True
     TRANSLATION_TARGET_LANGUAGE: str = "ru"  # язык по умолчанию для UI

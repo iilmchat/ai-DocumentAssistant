@@ -18,6 +18,15 @@ SEARCH_LATENCY = Histogram("vector_search_duration_seconds", "Vector search dura
 RERANK_LATENCY = Histogram("rerank_duration_seconds", "LLM reranking duration")
 LLM_COST_USD = Counter("llm_cost_usd_total", "Estimated LLM cost in USD")
 TRANSLATION_LATENCY = Histogram("translation_duration_seconds", "Translation block duration")
+
+# T7: online RAG-качество
+RAG_FAITHFULNESS = Histogram(
+    "rag_faithfulness", "Answer faithfulness to retrieved context", buckets=[0, 0.25, 0.5, 0.75, 1]
+)
+RAG_ANSWER_RELEVANCE = Histogram(
+    "rag_answer_relevance", "Answer relevance to question", buckets=[0, 0.25, 0.5, 0.75, 1]
+)
+RAG_LOW_QUALITY = Counter("rag_low_quality_total", "RAG answers below quality threshold")
 DOCS_BY_STATUS = Gauge("documents_by_status", "Documents by status", ["status"])
 
 
