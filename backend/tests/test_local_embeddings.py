@@ -1,6 +1,35 @@
-"""Тесты офлайн-эмбеддингов (LOCAL_EMBEDDINGS)."""
+"""Тесты офлайн-эмбеддингов и Ollama-адаптера."""
+
+from unittest.mock import MagicMock, patch
+
 from app.core import config
 from app.services import ai_service
+
+
+def test_ollama_embeddings_adapter():
+    import asyncio
+
+    fake_response = MagicMock()
+    fake_response.json.return_value = {"embeddings": [[0.1] * config.settings.EMBEDDING_DIM]}
+    fake_response.raise_for_status.return_value = None
+
+    class FakeClient:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def post(self, *_args, **_kwargs):
+            return fake_response
+
+    with patch("httpx.AsyncClient", FakeClient):
+        result = asyncio.run(ai_service._ollama_embeddings(["hello"]))
+    assert len(result.data) == 1
+    assert len(result.data[0].embedding) == config.settings.EMBEDDING_DIM
 
 
 def test_local_embeddings_shape():

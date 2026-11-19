@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     # --- Embeddings / поиск (Этап 5 / S3) ---
     EMBEDDING_MODEL: str = "text-embedding-3-large"
     EMBEDDING_DIM: int = 1024  # фиксируем размерность; менять через миграцию
+    # T7: реальные провайдеры. chat — OpenCode inference (OpenAI-compat),
+    # embeddings — Ollama (у Console нет /embeddings).
+    OPENCODE_CHAT: bool = True
+    OLLAMA_BASE_URL: str = "http://host.docker.internal:11434"
+    OLLAMA_EMBED_MODEL: str = "nomic-embed-text"
     # Локальный deterministic-эмбеддер для офлайн-разработки и smoke-тестов
     LOCAL_EMBEDDINGS: bool = False
     RERANK_TOP_K: int = 50  # кандидатов перед реранкером

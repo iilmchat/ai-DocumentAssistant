@@ -120,6 +120,8 @@ services:
       UPLOAD_DIR: /app/storage
     volumes:
       - shared_storage:/app/storage
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       db:
         condition: service_healthy

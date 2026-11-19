@@ -205,7 +205,9 @@ async def ask_question(
         answer = "Ответ по документу (офлайн-режим):\n" + context[:600]
         evaluate_answer(payload.question, answer, context)
         await db.commit()
-        return ChatResponse(answer=answer, sources=[c.snippet for c in citations], citations=citations)
+        return ChatResponse(
+            answer=answer, sources=[c.snippet for c in citations], citations=citations
+        )
 
     response = await _resilient_call(
         llm_breaker,

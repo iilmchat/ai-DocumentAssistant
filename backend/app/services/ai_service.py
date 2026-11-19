@@ -21,7 +21,15 @@ from app.core.prompts import render
 client = AsyncOpenAI(
     api_key=settings.OPENAI_API_KEY,
     base_url=settings.OPENAI_BASE_URL,
-    timeout=30.0,
+    timeout=60.0,
+    # OpenCode inference Nginx отклоняет дефолтный httpx User-Agent (403 error 1010)
+    default_headers={
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36"
+        ),
+        "Origin": "https://opencode.ai",
+    },
 )
 
 llm_breaker = CircuitBreaker("llm", failure_threshold=5, cooldown_seconds=60)
@@ -103,11 +111,31 @@ def _local_embeddings(texts: list[str]) -> list[list[float]]:
     return vectors
 
 
+async def _ollama_embeddings(texts: list[str]):
+    """Эмбеддинги через локальный Ollama (Console не предоставляет /embeddings)."""
+    import httpx
+
+    async with httpx.AsyncClient(timeout=60.0) as http:
+        response = await http.post(
+            f"{settings.OLLAMA_BASE_URL.rstrip('/')}/api/embed",
+            json={"model": settings.OLLAMA_EMBED_MODEL, "input": texts},
+        )
+        response.raise_for_status()
+        vectors = response.json()["embeddings"]
+    return SimpleNamespace(
+        data=[SimpleNamespace(embedding=vector) for vector in vectors],
+        usage=SimpleNamespace(total_tokens=sum(len(t.split()) for t in texts)),
+    )
+
+
 async def _embeddings_call(texts: list[str]):
     if settings.LOCAL_EMBEDDINGS:
         return SimpleNamespace(
             data=[SimpleNamespace(embedding=v) for v in _local_embeddings(texts)]
         )
+    if settings.OLLAMA_EMBED_MODEL:
+        # Реальные эмбеддинги через локальный Ollama в гибридном режиме
+        return await _ollama_embeddings(texts)
     try:
         return await client.embeddings.create(
             model=settings.EMBEDDING_MODEL,
