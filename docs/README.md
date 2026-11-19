@@ -22,6 +22,7 @@
 5. **Безопасность (`/docs/security/`)**
    - [Управление ключами и доступом](security/security-overview.md)
    - [Threat model](security/threat-model.md)
+   - [Hardening T8: cookie/CSRF/PII/RBAC](security/hardening.md)
 6. **Руководство пользователя (`/docs/user_guide/`)**
    - [Инструкция по работе с системой](user_guide/how-to-use.md)
    - [Перевод документов](user_guide/translation.md)

@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Sparkles, LogIn, UserPlus, Loader2, AlertCircle } from 'lucide-react'
-import { apiClient, tokenStore } from '../api/client'
+import { apiClient } from '../api/client'
 import { useI18n } from '../i18n'
 
 interface AuthFormProps {
@@ -24,7 +24,8 @@ export const AuthForm: React.FC<AuthFormProps> = ({ onAuthenticated }) => {
         mode === 'login'
           ? await apiClient.login(email, password)
           : await apiClient.register(email, password)
-      tokenStore.setPair(result)
+      // T8: токены установлены сервером в httpOnly cookie — сохранять нечего
+      void result
       onAuthenticated()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка авторизации')

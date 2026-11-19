@@ -73,6 +73,19 @@ class Settings(BaseSettings):
     LLM_MONTHLY_BUDGET_USD: float = 100.0
     PROMPT_VERSION: str = "v1"
 
+    # --- T8: безопасная сессия (httpOnly cookie + CSRF) ---
+    SESSION_COOKIE_SECURE: bool = True  # в проде только HTTPS
+    SESSION_COOKIE_SAMESITE: str = "lax"
+    SESSION_COOKIE_ACCESS: str = "access_token"
+    SESSION_COOKIE_REFRESH: str = "refresh_token"
+    CSRF_COOKIE_NAME: str = "csrf_token"
+    CSRF_HEADER_NAME: str = "X-CSRF-Token"
+    CSRF_ENFORCE: bool = True  # требует double-submit для cookie-аутентификации
+    # T8: PII и роли
+    PII_REDACTION_ENABLED: bool = True
+    DEFAULT_USER_ROLE: str = "editor"
+    AUDIT_WEBHOOK_URL: str = ""
+
     # --- T7: online RAG-оценка ---
     RAG_EVAL_ENABLED: bool = True
     RAG_EVAL_SAMPLE_RATE: float = 0.1  # доля запросов с detailed-оценкой

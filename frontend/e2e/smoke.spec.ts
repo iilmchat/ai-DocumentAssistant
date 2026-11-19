@@ -15,8 +15,9 @@ test('неавторизованный пользователь видит фо�
 })
 
 test('авторизованный пользователь видит конспект и кнопки экспорта', async ({ page }) => {
+  // T8: сессия теперь в httpOnly cookie; мок /auth/me sufficient
   await page.addInitScript(() => {
-    localStorage.setItem('ai_document_assistant_token', 'fake-test-token')
+    document.cookie = 'csrf_token=test-csrf; path=/'
   })
 
   await page.route('**/api/v1/auth/me', (route) =>

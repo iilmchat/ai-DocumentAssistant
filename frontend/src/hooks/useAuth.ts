@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { apiClient, refreshTokens, tokenStore } from '../api/client'
+import { apiClient, refreshTokens } from '../api/client'
 import { UserInfo } from '../types'
 
 export function useAuth() {
@@ -7,20 +7,17 @@ export function useAuth() {
   const [isLoading, setIsLoading] = useState(true)
 
   const refresh = useCallback(async () => {
-    // access-токен мог истечь — пробуем refresh перед тем, как считать сессию потерянной
-    if (!tokenStore.get() && tokenStore.getRefresh()) {
-      await refreshTokens()
-    }
-    if (!tokenStore.get()) {
-      setUser(null)
-      setIsLoading(false)
-      return
-    }
+    // T8: сессия живёт в httpOnly cookie. Если access истёк, /me вернёт 401 и
+    // authFetch сам попробует refresh (см. client.ts).
     try {
       setUser(await apiClient.getCurrentUser())
     } catch {
-      tokenStore.clearAll()
-      setUser(null)
+      await refreshTokens()
+      try {
+        setUser(await apiClient.getCurrentUser())
+      } catch {
+        setUser(null)
+      }
     } finally {
       setIsLoading(false)
     }

@@ -12,55 +12,55 @@ import {
 } from '../types'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? ''
-const TOKEN_KEY = 'ai_document_assistant_token'
-const REFRESH_KEY = 'ai_document_assistant_refresh'
+const CSRF_COOKIE = 'csrf_token'
 
+/**
+ * T8: токены больше не хранятся в localStorage — они живут в httpOnly cookie.
+ * Остаётся только не-httpOnly CSRF-cookie, которое JS копирует в заголовок.
+ */
 export const tokenStore = {
-  get: (): string | null => localStorage.getItem(TOKEN_KEY),
-  set: (token: string) => localStorage.setItem(TOKEN_KEY, token),
-  getRefresh: (): string | null => localStorage.getItem(REFRESH_KEY),
-  setRefresh: (token: string) => localStorage.setItem(REFRESH_KEY, token),
-  setPair: (pair: AuthResponse) => {
-    tokenStore.set(pair.access_token)
-    tokenStore.setRefresh(pair.refresh_token)
-  },
-  clear: () => localStorage.removeItem(TOKEN_KEY),
-  clearRefresh: () => localStorage.removeItem(REFRESH_KEY),
-  clearAll: () => {
-    tokenStore.clear()
-    tokenStore.clearRefresh()
-  },
+  get: (): string | null => null, // обратная совместимость вызовов
+  clearAll: () => undefined,
 }
 
-function authHeaders(): Record<string, string> {
-  const token = tokenStore.get()
-  return token ? { Authorization: `Bearer ${token}` } : {}
+function getCsrfToken(): string | null {
+  return (
+    document.cookie
+      .split('; ')
+      .find((c) => c.startsWith(`${CSRF_COOKIE}=`))
+      ?.split('=')[1] ?? null
+  )
+}
+
+function safeHeaders(init: RequestInit): Record<string, string> {
+  const headers: Record<string, string> = { ...(init.headers as Record<string, string>) }
+  const method = (init.method ?? 'GET').toUpperCase()
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+    const csrf = getCsrfToken()
+    if (csrf) headers['X-CSRF-Token'] = csrf
+  }
+  return headers
 }
 
 function handleUnauthorized(response: Response): void {
   if (response.status === 401) {
-    tokenStore.clearAll()
     window.dispatchEvent(new Event('auth:logout'))
   }
 }
 
 let refreshInFlight: Promise<boolean> | null = null
 
-/** S1: бесшовное обновление access-токена через refresh (ротация на бэке). */
+/** Бесшовное обновление сессии: refresh-токен уходит автоматически в cookie. */
 export async function refreshTokens(): Promise<boolean> {
-  const refresh = tokenStore.getRefresh()
-  if (!refresh) return false
   if (!refreshInFlight) {
     refreshInFlight = (async () => {
       try {
         const response = await fetch(`${API_BASE_URL}/api/v1/auth/refresh`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refresh_token: refresh }),
+          credentials: 'include',
+          headers: safeHeaders({ method: 'POST' }),
         })
-        if (!response.ok) return false
-        tokenStore.setPair((await response.json()) as AuthResponse)
-        return true
+        return response.ok
       } catch {
         return false
       } finally {
@@ -71,13 +71,14 @@ export async function refreshTokens(): Promise<boolean> {
   return refreshInFlight
 }
 
-/** Обёртка: при 401 один раз обновляет токен и повторяет запрос. */
+/** Обёртка: cookie отправляются автоматически, при 401 — один refresh и повтор. */
 async function authFetch(url: string, init: RequestInit = {}, retry = true): Promise<Response> {
   const response = await fetch(url, {
     ...init,
-    headers: { ...authHeaders(), ...(init.headers as Record<string, string>) },
+    credentials: 'include',
+    headers: safeHeaders(init),
   })
-  if (response.status === 401 && retry && tokenStore.getRefresh()) {
+  if (response.status === 401 && retry) {
     const refreshed = await refreshTokens()
     if (refreshed) return authFetch(url, init, false)
   }
@@ -89,6 +90,7 @@ export const apiClient = {
   async register(email: string, password: string): Promise<AuthResponse> {
     const response = await fetch(`${API_BASE_URL}/api/v1/auth/register`, {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
     })
@@ -102,6 +104,7 @@ export const apiClient = {
   async login(email: string, password: string): Promise<AuthResponse> {
     const response = await fetch(`${API_BASE_URL}/api/v1/auth/login`, {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
     })

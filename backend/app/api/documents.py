@@ -18,6 +18,7 @@ from app.core.config import settings
 from app.core.database import AsyncSessionLocal, get_db
 from app.core.errors import NotFoundError
 from app.core.language import validate_language
+from app.core.rbac import require_admin, require_editor
 from app.models.models import (
     Document,
     DocumentChunk,
@@ -82,7 +83,12 @@ async def _get_owned_document(
     return doc
 
 
-@router.post("/upload", response_model=DocumentResponse, status_code=201)
+@router.post(
+    "/upload",
+    response_model=DocumentResponse,
+    status_code=201,
+    dependencies=[Depends(require_editor)],
+)
 async def upload_document(
     request: Request,
     file: UploadFile = File(...),
@@ -323,7 +329,7 @@ async def document_pages(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/{document_id}/translate", status_code=202)
+@router.post("/{document_id}/translate", status_code=202, dependencies=[Depends(require_editor)])
 async def translate_document_endpoint(
     request: Request,
     document_id: uuid.UUID,
@@ -384,7 +390,9 @@ async def get_translation_status(
     }
 
 
-@router.delete("/{document_id}/translation", status_code=204)
+@router.delete(
+    "/{document_id}/translation", status_code=204, dependencies=[Depends(require_editor)]
+)
 async def delete_translation(
     document_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -432,7 +440,7 @@ async def list_glossary(
     ]
 
 
-@router.post("/{document_id}/glossary", status_code=201)
+@router.post("/{document_id}/glossary", status_code=201, dependencies=[Depends(require_editor)])
 async def add_glossary_term(
     document_id: uuid.UUID,
     source_term: str = Query(...),
@@ -474,7 +482,7 @@ async def add_glossary_term(
     return {"source_term": source_term, "target_term": target_term, "target_language": target}
 
 
-@router.delete("/{document_id}", status_code=204)
+@router.delete("/{document_id}", status_code=204, dependencies=[Depends(require_admin)])
 async def delete_document(
     request: Request,
     document_id: uuid.UUID,
@@ -609,7 +617,11 @@ async def _collect_document_text(db: AsyncSession, doc_id: uuid.UUID) -> str:
     return "\n\n".join(texts)
 
 
-@router.post("/{document_id}/summarize", response_model=SummaryVersionResponse)
+@router.post(
+    "/{document_id}/summarize",
+    response_model=SummaryVersionResponse,
+    dependencies=[Depends(require_editor)],
+)
 async def regenerate_summary(
     request: Request,
     document_id: uuid.UUID,
@@ -636,7 +648,7 @@ async def regenerate_summary(
     return version
 
 
-@router.post("/{document_id}/summarize/stream")
+@router.post("/{document_id}/summarize/stream", dependencies=[Depends(require_editor)])
 async def regenerate_summary_stream(
     request: Request,
     document_id: uuid.UUID,
@@ -685,7 +697,11 @@ async def regenerate_summary_stream(
     )
 
 
-@router.post("/{document_id}/versions/{version_id}/restore", response_model=DocumentResponse)
+@router.post(
+    "/{document_id}/versions/{version_id}/restore",
+    response_model=DocumentResponse,
+    dependencies=[Depends(require_editor)],
+)
 async def restore_summary_version(
     request: Request,
     document_id: uuid.UUID,

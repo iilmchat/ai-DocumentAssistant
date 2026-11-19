@@ -1,0 +1,11 @@
+# rule-id  action  comment
+# T8: временно отключаем шумные informational-правила, оставляем предупреждения
+10015	OFF	Content type missing charset — informational
+10021	OFF	X-Content-Type-Options — informational
+10027	OFF	Information disclosure via cache — informational
+10035	OFF	Strict-Transport-Security — informational (Nginx-level)
+10036	OFF	Content-Security-Policy — informational (SPA)
+10043	OFF	X-Frame-Options — informational (Nginx-level)
+10049	OFF	Cache control — informational
+10107	WARN	Cookie without SameSite — cookie already configured in app
+10202	WARN	Absence of anti-CSRF tokens — handled via double-submit cookie

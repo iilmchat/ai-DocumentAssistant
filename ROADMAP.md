@@ -74,12 +74,14 @@
 
 **Цель:** закрыть XSS-риск и подготовиться к corp-эксплуатации.
 
-- `[ ] P0` **T8-01** Перенести JWT из `localStorage` в httpOnly/Secure/SameSite cookie + CSRF-токен (отложено с S1-02).
-- `[ ] P0` **T8-02** PII-redaction перед отправкой в LLM: номера карт/паспортов/телефонов маскируются, оригинал остаётся в БД.
-- `[ ] P1` **T8-03** RBAC: роли `admin/editor/viewer`, разделение прав на загрузку/удаление/перевод/экспорт.
-- `[ ] P1` **T8-04** SAST (Semgrep) + DAST (OWASP ZAP baseline) в CI; pentest перед коммерческим запуском.
-- `[ ] P2` **T8-05** Audit log → внешний SIEM/immutable storage; retention уже есть (S4).
-- `[ ] P2` **T8-06** Secrets manager (Vault/AWS Secrets Manager) вместо `.env` на проде; ротация секретов по расписанию.
+- `[x] P0` **T8-01** JWT в httpOnly/Secure/SameSite cookie + CSRF double-submit (`X-CSRF-Token`); Bearer оставлен для API-клиентов; фронт больше не пишет токены в localStorage
+- `[x] P0` **T8-02** PII-redaction централизованно в `_resilient_call`: email/телефон/карта/ИНН/паспорт → плейсхолдеры
+- `[x] P1` **T8-03** RBAC (`viewer`/`editor`/`admin`), миграция `0008`; мутирующие эндпоинты требуют editor, удаление — admin
+- `[x] P1` **T8-04** SAST Semgrep + DAST OWASP ZAP baseline в отдельном workflow `security.yml` (pentest — отдельно)
+- `[x] P2` **T8-05** Audit log → SIEM webhook (`AUDIT_WEBHOOK_URL`, best-effort)
+- `[x] P2` **T8-06** Абстракция secrets manager (`SECRETS_PROVIDER=vault|aws`), env fallback
+
+> Оговорка: cookie `Secure=true` по умолчанию — для локального HTTP нужно `SESSION_COOKIE_SECURE=false`. Pentest и реальный Vault — отдельные задачи `[?]`.
 
 **DoD:** нет токенов в JS-доступном хранилище; PII не уходит в LLM; отчёт сканеров зелёный.
 

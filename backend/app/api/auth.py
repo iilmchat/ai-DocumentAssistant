@@ -3,7 +3,8 @@
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +17,7 @@ from app.core.cache import (
     register_failed_login,
 )
 from app.core.config import settings
+from app.core.csrf import generate_csrf_token, set_csrf_cookie
 from app.core.database import get_db
 from app.core.rate_limit import limiter
 from app.core.security import (
@@ -73,6 +75,7 @@ class AuditLogResponse(BaseModel):
 
 
 async def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> User:
@@ -81,10 +84,16 @@ async def get_current_user(
         detail="Необходим действующий токен доступа",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    if not credentials:
+    # T8:Bearer или httpOnly cookie (cookie — основной путь для браузера)
+    raw_token = (
+        credentials.credentials
+        if credentials
+        else request.cookies.get(settings.SESSION_COOKIE_ACCESS)
+    )
+    if not raw_token:
         raise unauthorized
 
-    payload = decode_token(credentials.credentials, "access")
+    payload = decode_token(raw_token, "access")
     if not payload:
         raise unauthorized
     if await is_jti_blacklisted(payload["jti"]):
@@ -121,25 +130,74 @@ def _tokens_for(user_id: uuid.UUID) -> TokenResponse:
     )
 
 
+def _set_session_cookies(response: Response, tokens: TokenResponse) -> None:
+    """T8: access и refresh в httpOnly cookie + CSRF-токен для double-submit."""
+    response.set_cookie(
+        key=settings.SESSION_COOKIE_ACCESS,
+        value=tokens.access_token,
+        httponly=True,
+        secure=settings.SESSION_COOKIE_SECURE,
+        samesite=settings.SESSION_COOKIE_SAMESITE,
+        path="/",
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
+    response.set_cookie(
+        key=settings.SESSION_COOKIE_REFRESH,
+        value=tokens.refresh_token,
+        httponly=True,
+        secure=settings.SESSION_COOKIE_SECURE,
+        samesite=settings.SESSION_COOKIE_SAMESITE,
+        path="/api/v1/auth/refresh",
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400,
+    )
+    set_csrf_cookie(response, generate_csrf_token())
+
+
+def _clear_session_cookies(response: Response) -> None:
+    for name in (
+        settings.SESSION_COOKIE_ACCESS,
+        settings.SESSION_COOKIE_REFRESH,
+        settings.CSRF_COOKIE_NAME,
+    ):
+        response.delete_cookie(name, path="/")
+        response.delete_cookie(name, path="/api/v1/auth/refresh")
+
+
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit(settings.REGISTER_RATE_LIMIT)
-async def register(request: Request, payload: RegisterRequest, db: AsyncSession = Depends(get_db)):
+async def register(
+    request: Request,
+    payload: RegisterRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
     email, password = _validate_credentials(payload.email, payload.password)
     existing = await db.execute(select(User).where(User.email == email))
     if existing.scalars().first():
         raise HTTPException(status_code=409, detail="Пользователь с таким email уже существует")
 
-    user = User(email=email, password_hash=hash_password(password))
+    user = User(
+        email=email,
+        password_hash=hash_password(password),
+        role=settings.DEFAULT_USER_ROLE,
+    )
     db.add(user)
     await db.flush()
     await log_action(db, user.id, "register", ip_address=_client_ip(request))
     await db.commit()
-    return _tokens_for(user.id)
+    tokens = _tokens_for(user.id)
+    _set_session_cookies(response, tokens)
+    return tokens
 
 
 @router.post("/login", response_model=TokenResponse)
 @limiter.limit(settings.LOGIN_RATE_LIMIT)
-async def login(request: Request, payload: LoginRequest, db: AsyncSession = Depends(get_db)):
+async def login(
+    request: Request,
+    payload: LoginRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
     email = payload.email.strip().lower()
     ip = _client_ip(request)
     lock_key = f"auth:failed:{email}:{ip or 'unknown'}"
@@ -155,13 +213,25 @@ async def login(request: Request, payload: LoginRequest, db: AsyncSession = Depe
     await clear_failed_logins(lock_key)
     await log_action(db, user.id, "login", ip_address=ip)
     await db.commit()
-    return _tokens_for(user.id)
+    tokens = _tokens_for(user.id)
+    _set_session_cookies(response, tokens)
+    return tokens
 
 
 @router.post("/refresh", response_model=TokenResponse)
 @limiter.limit(settings.LOGIN_RATE_LIMIT)
-async def refresh(request: Request, payload: RefreshRequest, db: AsyncSession = Depends(get_db)):
-    token_payload = decode_token(payload.refresh_token, "refresh")
+async def refresh(
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    payload: RefreshRequest | None = None,
+):
+    refresh_token = (
+        payload.refresh_token if payload else request.cookies.get(settings.SESSION_COOKIE_REFRESH)
+    )
+    if not refresh_token:
+        raise HTTPException(status_code=401, detail="Недействительный refresh-токен")
+    token_payload = decode_token(refresh_token, "refresh")
     if not token_payload:
         raise HTTPException(status_code=401, detail="Недействительный refresh-токен")
     try:
@@ -177,17 +247,36 @@ async def refresh(request: Request, payload: RefreshRequest, db: AsyncSession = 
     await blacklist_jti(token_payload["jti"], token_payload["exp"])
     await log_action(db, user_id, "refresh", ip_address=_client_ip(request))
     await db.commit()
-    return _tokens_for(user_id)
+    tokens = _tokens_for(user_id)
+    _set_session_cookies(response, tokens)
+    return tokens
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
+    request: Request,
+    response: Response,
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     current_user: User = Depends(get_current_user),
 ):
-    payload = decode_token(credentials.credentials, "access")  # type: ignore[union-attr]
+    raw = (
+        credentials.credentials
+        if credentials
+        else request.cookies.get(settings.SESSION_COOKIE_ACCESS)
+    )
+    payload = decode_token(raw, "access") if raw else None
     if payload:
         await blacklist_jti(payload["jti"], payload["exp"])
+    _clear_session_cookies(response)
+
+
+@router.get("/csrf")
+async def csrf_token():
+    """T8: отдать свежий CSRF-токен (устанавливает cookie, возвращает значение)."""
+    token = generate_csrf_token()
+    response = JSONResponse(content={"csrf_token": token})
+    set_csrf_cookie(response, token)
+    return response
 
 
 @router.get("/me", response_model=UserResponse)

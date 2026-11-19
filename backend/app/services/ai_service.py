@@ -53,6 +53,11 @@ def _get_llm_semaphore() -> asyncio.Semaphore:
 async def _resilient_call(breaker: CircuitBreaker, operation: str, func, *args, **kwargs):
     """S2: timeout + backoff + circuit breaker + метрики для внешних API."""
     started = time.perf_counter()
+    # T8: маскируем PII во всех сообщениях, уходящих в LLM
+    if "messages" in kwargs:
+        from app.core.pii import redact_messages
+
+        kwargs["messages"] = redact_messages(kwargs["messages"])
     try:
         async with _get_llm_semaphore():
             result = await breaker.call(func, *args, **kwargs)

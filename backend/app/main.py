@@ -15,6 +15,7 @@ from __version__ import __version__
 from app.api import auth, chat, documents
 from app.core.cache import redis_client
 from app.core.config import settings
+from app.core.csrf import enforce_csrf
 from app.core.errors import AppError
 from app.core.logging import configure_logging, log
 from app.core.metrics import (
@@ -56,6 +57,8 @@ app.add_middleware(
 
 @app.middleware("http")
 async def observability_middleware(request: Request, call_next):
+    # T8: CSRF для cookie-аутентификации (Bearer-запросы не проверяются)
+    await enforce_csrf(request)
     request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
     token = structlog.contextvars.bind_contextvars(request_id=request_id)
     started = time.perf_counter()

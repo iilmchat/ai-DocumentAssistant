@@ -26,6 +26,8 @@ class User(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email = Column(String(255), unique=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
+    # T8: RBAC — admin / editor / viewer
+    role = Column(String(32), nullable=False, default="editor", server_default="editor")
     created_at = Column(TIMESTAMP(timezone=True), server_default=text("CURRENT_TIMESTAMP"))
 
 
