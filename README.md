@@ -19,6 +19,7 @@
 - **Двуязычные документы (T6):** перевод по блокам с глоссарием и защитой чисел/дат, отдельная очередь, поиск по оригиналу и переводу, bilingual-просмотр страниц, экспорт перевода.
 - **Качество RAG (T7):** онлайн-метрики faithfulness/relevance, query rewriting и feature flags, сжатие контекста, готовые скрипты load/restore-учений.
 - **Безопасность (T8):** JWT в httpOnly cookie + CSRF, PII-redaction перед LLM, RBAC, Semgrep/ZAP в CI, SIEM-webhook и secrets-manager abstraction.
+- **Масштаб (T9):** S3/MinIO storage, Helm + HPA, мультитенантность, XLSX/PPTX/EML/аудио и инкрементальная индексация.
 - **Идемпотентность:** повторная загрузка того же файла (SHA-256) не пересчитывает OCR и эмбеддинги.
 
 ## Технологический стек

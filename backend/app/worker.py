@@ -31,7 +31,8 @@ from app.services.ai_service import (
     generate_embeddings,
 )
 from app.services.document_parser import extract_text_from_file, split_text_into_chunks
-from app.services.file_validation import IMAGE_EXTENSIONS
+from app.services.extended_parsers import EXTRACTORS, transcribe_audio
+from app.services.file_validation import AUDIO_EXTENSIONS, IMAGE_EXTENSIONS
 from app.services.retention import cleanup_retention
 from app.services.text_extraction import chunk_pages, extract_pages, extract_pages_from_image
 
@@ -83,19 +84,32 @@ async def save_summary_version(session, doc_id, summary: str) -> SummaryVersion:
     return version
 
 
-async def _embed_and_store_chunks(session, doc_id, chunks: list[dict]):
+async def _embed_and_store_chunks(session, doc_id, chunks: list[dict], old_hashes: set[str]):
+    import hashlib
+
     batch_size = 50
     for i in range(0, len(chunks), batch_size):
         batch = chunks[i : i + batch_size]
-        texts = [c["content"] for c in batch]
-        embeddings = [ensure_embedding_dim(emb) for emb in await generate_embeddings(texts)]
-        for idx, (chunk, emb) in enumerate(zip(batch, embeddings, strict=True)):
+        new_hashes = [hashlib.sha256(chunk["content"].encode()).hexdigest() for chunk in batch]
+        to_embed = [
+            chunk for chunk, h in zip(batch, new_hashes, strict=True) if h not in old_hashes
+        ]
+        embedded: dict[int, list[float]] = {}
+        if to_embed:
+            embeddings = await generate_embeddings([c["content"] for c in to_embed])
+            embedded = {
+                id(c): ensure_embedding_dim(emb)
+                for c, emb in zip(to_embed, embeddings, strict=True)
+            }
+
+        for idx, (chunk, content_hash) in enumerate(zip(batch, new_hashes, strict=True)):
             session.add(
                 DocumentChunk(
                     document_id=doc_id,
                     chunk_index=i + idx,
                     content=chunk["content"],
-                    embedding=emb,
+                    content_hash=content_hash,
+                    embedding=embedded.get(id(chunk), [0.0] * settings.EMBEDDING_DIM),
                     page_numbers=chunk.get("page_numbers"),
                     headings=chunk.get("headings"),
                     extraction_method=chunk.get("extraction_method"),
@@ -150,8 +164,14 @@ async def async_process_document(document_id: str, file_path: str):
                 chunks = await asyncio.to_thread(chunk_pages, pages)
                 full_text = "\n\n".join(p.text for p in pages)
             else:
-                # TXT / DOCX — путь без постраничности
-                full_text = await asyncio.to_thread(extract_text_from_file, file_path, ext)
+                # T9: XLSX/PPTX/EML — новые парсеры, аудио — транскрибация
+                if ext in AUDIO_EXTENSIONS:
+                    full_text = await transcribe_audio(file_path)
+                elif ext in EXTRACTORS:
+                    full_text = await asyncio.to_thread(EXTRACTORS[ext], file_path)
+                else:
+                    # TXT / DOCX — путь без постраничности
+                    full_text = await asyncio.to_thread(extract_text_from_file, file_path, ext)
                 chunk_texts = split_text_into_chunks(full_text)
                 chunks = [
                     {
@@ -165,6 +185,19 @@ async def async_process_document(document_id: str, file_path: str):
                 doc.total_pages = 1
                 doc.processed_pages = 1
 
+            # T9: сохраняем старые хеши до удаления — неизменившиеся чанки не переэмбеддим
+            old_hashes = set(
+                (
+                    await session.execute(
+                        select(DocumentChunk.content_hash).where(
+                            DocumentChunk.document_id == doc.id
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+
             # пересоздание: чистим старые чанки (идемпотентность при retry)
             await session.execute(delete(DocumentChunk).where(DocumentChunk.document_id == doc.id))
             await session.execute(delete(DocumentPage).where(DocumentPage.document_id == doc.id))
@@ -174,7 +207,7 @@ async def async_process_document(document_id: str, file_path: str):
             await session.commit()
 
             if chunks:
-                await _embed_and_store_chunks(session, doc.id, chunks)
+                await _embed_and_store_chunks(session, doc.id, chunks, old_hashes)
                 # S3: после реиндексации старый кэш эмбеддингов запросов неактуален
                 await invalidate_embedding_cache()
 

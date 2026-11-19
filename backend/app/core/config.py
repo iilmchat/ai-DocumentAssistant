@@ -65,6 +65,12 @@ class Settings(BaseSettings):
     HNSW_EF_SEARCH: int = 80
     EMBEDDING_CACHE_TTL_SECONDS: int = 3600
 
+    # --- Пул БД и конкуренция LLM (S3) ---
+    DB_POOL_SIZE: int = 10
+    DB_MAX_OVERFLOW: int = 20
+    DB_POOL_PRE_PING: bool = True
+    LLM_MAX_CONCURRENCY: int = 4
+
     # --- S5: реранкинг и стоимость LLM ---
     RERANK_ENABLED: bool = True
     RERANK_MODEL: str = ""  # пусто = LLM_MODEL
@@ -72,6 +78,21 @@ class Settings(BaseSettings):
     LLM_COST_PER_1K_OUTPUT: float = 0.0
     LLM_MONTHLY_BUDGET_USD: float = 100.0
     PROMPT_VERSION: str = "v1"
+
+    # --- T6: двуязычные документы ---
+    TRANSLATION_ENABLED: bool = True
+    TRANSLATION_TARGET_LANGUAGE: str = "ru"  # язык по умолчанию для UI
+    TRANSLATION_QUEUE: str = "translation"
+    TRANSLATION_MAX_CHARS_PER_REQUEST: int = 4000
+    TRANSLATION_CACHE_TTL_SECONDS: int = 86400
+    TRANSLATION_COST_LIMIT_USD: float = 20.0  # лимит на документ
+    SUPPORTED_LANGUAGES: str = "ru,en,de,fr,es"
+
+    # --- T7: online RAG-оценка ---
+    RAG_EVAL_ENABLED: bool = True
+    RAG_EVAL_SAMPLE_RATE: float = 0.1  # доля запросов с detailed-оценкой
+    RAG_MIN_FAITHFULNESS: float = 0.5
+    RAG_MIN_ANSWER_RELEVANCE: float = 0.5
 
     # --- T8: безопасная сессия (httpOnly cookie + CSRF) ---
     SESSION_COOKIE_SECURE: bool = True  # в проде только HTTPS
@@ -86,26 +107,18 @@ class Settings(BaseSettings):
     DEFAULT_USER_ROLE: str = "editor"
     AUDIT_WEBHOOK_URL: str = ""
 
-    # --- T7: online RAG-оценка ---
-    RAG_EVAL_ENABLED: bool = True
-    RAG_EVAL_SAMPLE_RATE: float = 0.1  # доля запросов с detailed-оценкой
-    RAG_MIN_FAITHFULNESS: float = 0.5
-    RAG_MIN_ANSWER_RELEVANCE: float = 0.5
-
-    # --- T6: двуязычные документы ---
-    TRANSLATION_ENABLED: bool = True
-    TRANSLATION_TARGET_LANGUAGE: str = "ru"  # язык по умолчанию для UI
-    TRANSLATION_QUEUE: str = "translation"
-    TRANSLATION_MAX_CHARS_PER_REQUEST: int = 4000
-    TRANSLATION_CACHE_TTL_SECONDS: int = 86400
-    TRANSLATION_COST_LIMIT_USD: float = 20.0  # лимит на документ
-    SUPPORTED_LANGUAGES: str = "ru,en,de,fr,es"
-
-    # --- Пул БД и конкуренция LLM (S3) ---
-    DB_POOL_SIZE: int = 10
-    DB_MAX_OVERFLOW: int = 20
-    DB_POOL_PRE_PING: bool = True
-    LLM_MAX_CONCURRENCY: int = 4
+    # --- T9: object storage и мультитенантность ---
+    RATE_LIMIT_REDIS: bool = False  # включить общий Redis-storage для slowapi
+    STORAGE_BACKEND: str = "local"  # local | s3
+    S3_ENDPOINT_URL: str | None = None  # для MinIO
+    S3_BUCKET: str = "ai-documents"
+    S3_ACCESS_KEY: str = ""
+    S3_SECRET_KEY: str = ""
+    S3_REGION: str = "us-east-1"
+    S3_PRESIGN_TTL: int = 300  # секунды
+    MULTITENANT_ENABLED: bool = True
+    MAX_ORG_DOCUMENTS: int = 1000
+    MAX_ORG_STORAGE_BYTES: int = 20 * 1024 * 1024 * 1024  # 20 ГБ
 
     model_config = SettingsConfigDict(
         env_file=".env",

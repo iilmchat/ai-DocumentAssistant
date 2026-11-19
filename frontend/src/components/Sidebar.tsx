@@ -1,4 +1,4 @@
-import React, { useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import {
   FileText,
   Upload,
@@ -11,6 +11,8 @@ import {
 } from 'lucide-react'
 import { DocumentItem, DocumentStatus } from '../types'
 import { useI18n } from '../i18n'
+import { apiClient } from '../api/client'
+import { Organization } from '../types'
 
 interface SidebarProps {
   documents: DocumentItem[]
@@ -64,6 +66,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const { t, lang, setLang } = useI18n()
+  const [org, setOrg] = useState<Organization | null>(null)
+
+  useEffect(() => {
+    apiClient
+      .getMyOrganization()
+      .then(setOrg)
+      .catch(() => undefined)
+  }, [])
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -92,11 +102,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </button>
       </div>
 
+      {org && (
+        <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 text-[11px] text-slate-500">
+          🏢 {org.name} · {org.documents} док. · {(org.storage_bytes / 1024 / 1024).toFixed(0)} МБ
+        </div>
+      )}
+
       <div className="p-4">
         <input
           ref={fileInputRef}
           type="file"
-          accept=".pdf,.docx,.txt,.jpg,.jpeg,.png,.tiff,.tif"
+          accept=".pdf,.docx,.xlsx,.pptx,.txt,.jpg,.jpeg,.png,.tiff,.tif,.eml,.mp3,.wav,.m4a"
           onChange={handleFileChange}
           className="hidden"
         />

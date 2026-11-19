@@ -18,6 +18,7 @@ REQUIRED_TABLES = {
     "audit_logs",
     "token_usages",
     "glossaries",
+    "organizations",
     "alembic_version",
 }
 

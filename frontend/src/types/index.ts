@@ -56,6 +56,14 @@ export interface GlossaryTerm {
   target_language: string | null
 }
 
+export interface Organization {
+  id: string
+  name: string
+  slug: string | null
+  documents: number
+  storage_bytes: number
+}
+
 export interface DocumentList {
   items: DocumentItem[]
   total: number

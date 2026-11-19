@@ -1,0 +1,31 @@
+{{- range $name, $cfg := dict "worker" (dict "queue" "default,dlq" "replicas" $.Values.replicaCount.worker "resources" $.Values.resources.backend) "ocr-worker" (dict "queue" "ocr" "replicas" $.Values.replicaCount.ocrWorker "resources" $.Values.resources.ocrWorker) "translation-worker" (dict "queue" "translation" "replicas" $.Values.replicaCount.translationWorker "resources" $.Values.resources.translationWorker) }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $.Release.Name }}-{{ $name }}
+  labels:
+    app: {{ $.Release.Name }}-{{ $name }}
+spec:
+  replicas: {{ $cfg.replicas }}
+  selector:
+    matchLabels:
+      app: {{ $.Release.Name }}-{{ $name }}
+  template:
+    metadata:
+      labels:
+        app: {{ $.Release.Name }}-{{ $name }}
+    spec:
+      containers:
+        - name: worker
+          image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag }}"
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          command: ["celery", "-A", "app.worker.celery_app", "worker", "--loglevel=info", "-Q", {{ $cfg.queue | quote }}]
+          envFrom:
+            - secretRef:
+                name: ai-document-assistant-secrets
+          env:
+            - name: STORAGE_BACKEND
+              value: {{ $.Values.storage.backend | quote }}
+          resources:
+{{ toYaml $cfg.resources | indent 12 }}
+{{- end }}

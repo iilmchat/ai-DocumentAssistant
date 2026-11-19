@@ -42,6 +42,12 @@ def sniff_mime(path: str) -> str | None:
                 names = z.namelist()
                 if "word/document.xml" in names:
                     return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                if "xl/workbook.xml" in names:
+                    return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                if "ppt/presentation.xml" in names:
+                    return (
+                        "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                    )
                 total_uncompressed = sum(i.file_size for i in z.infolist())
                 compressed = max(os.path.getsize(path), 1)
                 if total_uncompressed > 200 * compressed:  # ZIP-бомба
@@ -63,11 +69,17 @@ def sniff_mime(path: str) -> str | None:
 ALLOWED_MIMES = {
     "application/pdf": ".pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+    "message/rfc822": ".eml",
     "text/plain": ".txt",
     "image/jpeg": ".jpg",
     "image/png": ".png",
     "image/tiff": ".tiff",
 }
+
+# T9: аудио распознаётся transcription API
+AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".ogg"}
 
 # Изображения распознаются целиком как одна страница и идут в OCR-очередь
 IMAGE_MIMES = {"image/jpeg", "image/png", "image/tiff"}

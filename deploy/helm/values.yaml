@@ -1,0 +1,46 @@
+# T9: Helm values для K8s
+replicaCount:
+  backend: 2
+  worker: 2
+  ocrWorker: 1
+  translationWorker: 1
+
+image:
+  repository: ai-document-assistant
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  port: 80
+  backendPort: 8000
+
+# Внешние секреты — создаются отдельно (Sealed Secrets / Vault)
+externalSecrets:
+  enabled: false
+  secretName: ai-document-assistant-secrets
+
+# HPA по длине очереди Celery (кастомная метрика)
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetQueueLength: 20
+
+storage:
+  backend: s3  # local | s3
+  s3Bucket: ai-documents
+  existingClaim: ""
+
+resources:
+  backend:
+    requests: { cpu: 200m, memory: 512Mi }
+    limits: { cpu: "1", memory: 1Gi }
+  ocrWorker:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits: { cpu: "2", memory: 2Gi }
+  translationWorker:
+    requests: { cpu: 200m, memory: 512Mi }
+    limits: { cpu: "1", memory: 1Gi }
+
+grafana:
+  enabled: true

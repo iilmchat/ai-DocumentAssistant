@@ -12,7 +12,7 @@ from slowapi.errors import RateLimitExceeded
 from sqlalchemy import func, select, text
 
 from __version__ import __version__
-from app.api import auth, chat, documents
+from app.api import auth, chat, documents, organizations
 from app.core.cache import redis_client
 from app.core.config import settings
 from app.core.csrf import enforce_csrf
@@ -111,6 +111,7 @@ async def validation_error_handler(_request: Request, exc: RequestValidationErro
 app.include_router(auth.router)
 app.include_router(documents.router)
 app.include_router(chat.router)
+app.include_router(organizations.router)
 
 
 @app.get("/")

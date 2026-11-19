@@ -18,6 +18,7 @@
    - [SLO и runbook наблюдаемости](operations/runbook.md)
    - [Нагрузочное тестирование](operations/load-test.md)
    - [Стейдж-прогон и учения](operations/stage-runbook.md)
+   - [Масштабирование (T9)](operations/scaling.md)
    - [Backup и Restore](operations/backup-restore.md)
 5. **Безопасность (`/docs/security/`)**
    - [Управление ключами и доступом](security/security-overview.md)

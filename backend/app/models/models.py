@@ -18,8 +18,19 @@ from app.core.config import settings
 from app.core.database import Base
 
 
+class Organization(Base):
+    """T9: tenant — изоляция документов и квот между организациями."""
+
+    __tablename__ = "organizations"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(255), nullable=False)
+    slug = Column(String(80), unique=True, nullable=True)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=text("CURRENT_TIMESTAMP"))
+
+
 class User(Base):
-    """Этап 4 (заготовка): владелец документов. Пока используется демо-аккаунт."""
+    """Этап 4 / T9: владелец документов, участник организации."""
 
     __tablename__ = "users"
 
@@ -28,6 +39,10 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     # T8: RBAC — admin / editor / viewer
     role = Column(String(32), nullable=False, default="editor", server_default="editor")
+    # T9: мультитенантность
+    org_id = Column(
+        UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="SET NULL"), nullable=True
+    )
     created_at = Column(TIMESTAMP(timezone=True), server_default=text("CURRENT_TIMESTAMP"))
 
 
@@ -91,6 +106,8 @@ class DocumentChunk(Base):
     )
     chunk_index = Column(Integer, nullable=False)
     content = Column(Text, nullable=False)
+    # T9: инкрементальная индексация — пересчитываем эмбеддинг только при изменении текста
+    content_hash = Column(String(64), nullable=True, index=True)
     embedding = Column(Vector(settings.EMBEDDING_DIM), nullable=False)
     # Этап 1: цитирование со ссылками на страницы в RAG-ответах
     page_numbers = Column(JSONB, nullable=True)  # [1, 2, ...]

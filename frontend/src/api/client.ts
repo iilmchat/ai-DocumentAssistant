@@ -3,6 +3,7 @@ import {
   DocumentItem,
   DocumentList,
   GlossaryTerm,
+  Organization,
   PageItem,
   TranslationStatus,
   ChatResponse,
@@ -180,6 +181,27 @@ export const apiClient = {
   async getPages(documentId: string): Promise<PageItem[]> {
     const response = await authFetch(`${API_BASE_URL}/api/v1/documents/${documentId}/pages`)
     if (!response.ok) throw new Error('Не удалось загрузить страницы')
+    return response.json()
+  },
+
+  // --- T9: организации ---
+  async getMyOrganization(): Promise<Organization | null> {
+    const response = await authFetch(`${API_BASE_URL}/api/v1/organizations/me`)
+    if (response.status === 404) return null
+    if (!response.ok) throw new Error('Не удалось загрузить организацию')
+    return response.json()
+  },
+
+  async createOrganization(name: string, slug?: string): Promise<Organization> {
+    const response = await authFetch(`${API_BASE_URL}/api/v1/organizations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, slug }),
+    })
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}))
+      throw new Error(err.detail || 'Не удалось создать организацию')
+    }
     return response.json()
   },
 

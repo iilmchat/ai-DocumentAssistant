@@ -78,6 +78,10 @@
 ### `POST /api/v1/chat/stream`
 То же, что `/ask`, но ответ стримится через SSE: события `citations` (массив цитат), `token` (`{"delta": "..."}`), `done` / `error`.
 
+### `POST /api/v1/organizations` / `GET /api/v1/organizations/me`
+T9: создать организацию (tenant) и получить квоты/статистику своей организации.
+`POST /api/v1/organizations/{id}/members/{user_id}` — добавить участника (admin).
+
 ### `POST /api/v1/documents/{id}/translate?target_language=ru`
 T6: запуск перевода (202). Документ переводится в отдельной очереди; оригинал не меняется.
 

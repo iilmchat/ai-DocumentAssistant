@@ -91,12 +91,12 @@
 
 **Цель:** выйти за пределы одного Docker-хоста.
 
-- `[ ] P0` **T9-01** Object storage (S3/MinIO) для оригиналов вместо `shared_storage` volume.
-- `[ ] P1` **T9-02** K8s/Helm-чарт (или Nomad) с HPA автоподбором воркеров по длине очереди (метрика из S2); in-memory rate limiter → Redis.
-- `[ ] P1` **T9-03** Партиционирование `token_usages` и `audit_logs` по месяцам + read replica для аналитики.
-- `[ ] P1` **T9-04** Настоящая мультитенантность: organization_id, приглашения, изоляция квот (сейчас только user_id).
-- `[ ] P2` **T9-05** Новые форматы: XLSX/PPTX, письма (.eml), веб-страницы, аудио через Whisper (→ тот же пайплайн чанков).
-- `[ ] P2` **T9-06** Инкрементальная индексация при изменении файла (diff по хешам блоков) вместо полной переобработки.
+- `[x] P0` **T9-01** Абстракция `StorageBackend` (local/S3-MinIO), `STORAGE_BACKEND`, MinIO в compose; S3 нужен boto3
+- `[x] P1` **T9-02** Helm-чарт в `deploy/helm` с HPA по `celery_queue_length`; Redis-backed rate limiter (`RATE_LIMIT_REDIS`)
+- `[~] P1` **T9-03** Партиционирование `token_usages`/`audit_logs` и read replica — depends on реального объёма/стейджа `[?]`
+- `[x] P1` **T9-04** Модель `Organization`, поле `org_id`, миграция `0009`, API `/organizations`, tenant-квоты, UI-блок/org API
+- `[x] P2` **T9-05** Парсеры XLSX/PPTX/EML и аудио через Whisper, MIME-детекция, новые форматы в UI upload
+- `[x] P2` **T9-06** Инкрементальная индексация: `content_hash` (миграция `0010`), переэмбеддим только изменившиеся чанки
 
 **DoD:** стек поднимается в K8s, файлы в S3, воркеры масштабируются по очереди.
 
