@@ -1,10 +1,14 @@
-"""S3: нагрузочный сценарий. Запуск:
-    cd backend && locust -f tests/load/locustfile.py --host http://localhost
-Токен и document_id задаются через env: LOAD_ACCESS_TOKEN, LOAD_DOCUMENT_ID.
+"""T7: нагрузочный сценарий (реальный стек, cookie-аутентификация).
+
+Запуск:
+    cd backend && locust -f tests/load/locustfile.py --host http://localhost:8000 --headless \
+      --users 20 --spawn-rate 5 --run-time 2m --html ../docs/operations/reports/load.html
+
+Каждый виртуальный пользователь логинится при старте (токен живёт 15 минут),
+затем выполняет типичные операции с RAG-документом.
 """
 
 import os
-import uuid
 
 from locust import HttpUser, between, task
 
@@ -13,9 +17,34 @@ class DocumentAssistantUser(HttpUser):
     wait_time = between(0.5, 2)
 
     def on_start(self):
-        self.token = os.environ.get("LOAD_ACCESS_TOKEN", "")
         self.document_id = os.environ.get("LOAD_DOCUMENT_ID", "")
-        self.client.headers.update({"Authorization": f"Bearer {self.token}"})
+        token = os.environ.get("LOAD_ACCESS_TOKEN", "")
+
+        if token:
+            # Один выданный токен на всех пользователей: бэкенд принимает Bearer,
+            # CSRF для Bearer не требуется (иначе rate-limit логина с одного IP).
+            self.client.headers.update({"Authorization": f"Bearer {token}"})
+            self.csrf = ""
+            return
+
+        email = os.environ.get("LOAD_EMAIL", "py-smoke@example.com")
+        password = os.environ.get("LOAD_PASSWORD", "secret123")
+        with self.client.post(
+            "/api/v1/auth/login",
+            json={"email": email, "password": password},
+            name="/auth/login",
+            catch_response=True,
+        ) as resp:
+            if resp.status_code != 200:
+                resp.failure(f"login failed: {resp.status_code}")
+
+        self.csrf = ""
+        for cookie in self.client.cookies:  # RequestsCookieJar — итерируется напрямую
+            if cookie.name == "csrf_token":
+                self.csrf = cookie.value
+
+    def _csrf_headers(self) -> dict[str, str]:
+        return {"X-CSRF-Token": self.csrf} if self.csrf else {}
 
     @task(5)
     def health(self):
@@ -33,9 +62,10 @@ class DocumentAssistantUser(HttpUser):
             "/api/v1/chat/ask",
             json={
                 "document_id": self.document_id,
-                "question": f"Кратко опиши документ {uuid.uuid4().hex[:6]}",
+                "question": "Какие сроки оплаты указаны в документе?",
                 "top_k": 5,
             },
+            headers=self._csrf_headers(),
             name="/chat/ask",
         )
 

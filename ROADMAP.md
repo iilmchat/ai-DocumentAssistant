@@ -59,12 +59,12 @@
 
 **Цель:** от «работает» к «измеримо улучшается».
 
-- `[~] P0` **T7-01** Restore drill выполнен на Docker Desktop (3 документа восстановлены); headless load-test ещё не прогонялся `[?]`. См. `docs/operations/docker-desktop-smoke.md`
+- `[x] P0` **T7-01** Restore drill (3 документа) и headless load-test (20 юзеров, 1876 запросов, 0 ошибок, p95 chat 59 мс) выполнены. Отчёты: `docker-desktop-smoke.md`, `load-report.md`
 - `[x] P1` **T7-02** Онлайн RAG-оценка (лёгкие эвристики вместо тяжёлого RAGAS): `rag_faithfulness`, `rag_answer_relevance`, `rag_low_quality_total`, алерт `LowRagFaithfulness`
 - `[x] P1` **T7-03** Query rewriting через LLM (`rewrite_query`), включается фича-флагом `query_rewriting`, fallback на исходный вопрос
 - `[x] P1` **T7-04** Feature flags в Redis (`app/core/flags.py`): `query_rewriting`, `prompt_version`, `reranker`; A/B-прогон на реальных запросах — следующий шаг
 - `[x] P2` **T7-05** Context compression (`build_context`) — обрезка длинных чанков, меньше токенов; self-RAG отложен до реальных замеров
-- `[~] P2` **T7-06** A/B-тест HNSW `ef_search` — зависит от фактического load-test (T7-01)
+- `[x] P2` **T7-06** A/B-тест HNSW `ef_search` не потребовался: p95 59 мс с 5× запасом, менять значение 80 без recall-замера нецелесообразно (см. `load-report.md`)
 
 **DoD:** есть дашборд с качеством ответов и ценой запроса; каждый change промпта подтверждён метрикой.
 

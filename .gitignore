@@ -22,6 +22,7 @@ frontend/dist/
 frontend/playwright-report/
 frontend/test-results/
 docker-compose.local.yml
+docs/operations/reports/
 
 # IDE / OS
 .idea/
