@@ -1,4 +1,6 @@
-# TODO — Best Practices Backlog (AI Document Assistant)
+# TODO — архив спринтов S0–S5 (AI Document Assistant)
+
+> Все задачи в этом файле закрыты. Следующий горизонт — в [`ROADMAP.md`](./ROADMAP.md).
 
 > Обновлено: 2026-11-18. Базовое состояние: Roadmap 1–8 закрыт, hardening-спринт выполнен
 > (Alembic, CORS, секреты, валидация эмбеддингов), 20 pytest-тестов, CI pytest + build + e2e.
