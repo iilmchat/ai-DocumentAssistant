@@ -46,8 +46,8 @@ test('авторизованный пользователь видит конс�
 
   await page.goto('/')
   await expect(page.getByText('Умный конспект документа')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'MD' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'DOCX' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'PDF' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'MD', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'DOCX', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'PDF', exact: true })).toBeVisible()
   await expect(page.getByText('Пункт один')).toBeVisible()
 })

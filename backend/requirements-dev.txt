@@ -1,4 +1,4 @@
-# Инструменты разработки и CI (S0). Не попадают в production-образ.
+# Development and CI tools (S0). Not used in production image.
 -r requirements.txt
 
 ruff==0.17.4
@@ -6,3 +6,6 @@ mypy==2.4.1
 pre-commit==4.7.0
 pip-audit==2.10.1
 locust==2.47.0
+hypothesis==6.170.15
+schemathesis==4.33.4
+mutmut==2.5.1

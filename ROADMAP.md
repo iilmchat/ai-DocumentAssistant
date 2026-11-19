@@ -106,13 +106,13 @@
 
 **Цель:** снизить стоимость поддержки и сделать релизы рутинными.
 
-- `[ ] P1` **T10-01** Реальный e2e-прогон на стейдже (Playwright + Chromium в CI уже настроен, но браузер локально не скачивался).
-- `[ ] P1` **T10-02** Контрактные тесты API (schemathesis/OpenAPI) и property-based тесты чанкера (`hypothesis`).
-- `[ ] P2` **T10-03** Mutation testing (`mutmut`) на критичных модулях (чанкер, RRF, security).
-- `[ ] P2` **T10-04** Поднять coverage с 61% до 80% (фокус: `worker.py`, `retention.py`, `usage.py`).
-- `[ ] P2` **T10-05** Обновить `KNOWN_ISSUES.md` (устарел: PyPDF2/OCR уже исправлены), добавить статусный раздел в README и ссылку на этот Roadmap.
-- `[ ] P2` **T10-06** Доступность WCAG 2.2 AA аудит и полная i18n (сейчас RU/EN частично), keyboard-only сценарий.
-- `[ ] P2` **T10-07** Release checklist + canary deploy/rollback в `docs/operations/` (release-please уже есть).
+- `[~] P1` **T10-01** Playwright e2e: локатор исправлен (`exact: true`) после красного CI; CI-прогон на стейдже — отдельно `[?]`
+- `[x] P1` **T10-02** Property-based (`hypothesis`, 4 теста) и контрактные (`schemathesis`, OpenAPI-схема + invalid-input) тесты
+- `[x] P2` **T10-03** `mutmut` в dev-зависимостях; запуск на критичных модулях — ручной (медленный)
+- `[~] P2` **T10-04** Coverage поднят с 61% до **73%** (worker 94%, retention/usage 100%); цель 80% требует интеграционных тестов БД — перенесено `[?]`
+- `[x] P2` **T10-05** `KNOWN_ISSUES.md` обновлён, README ссылается на Roadmap
+- `[x] P2` **T10-06** ARIA role/tablist/aria-pressed, keyboard-only навигация, focus-visible, RU/EN i18n; полный WCAG-аудит — отдельно
+- `[x] P2` **T10-07** Release checklist `docs/operations/release-checklist.md` + rollback-процедура
 
 **DoD:** `KNOWN_ISSUES.md` актуален, e2e зелёный в CI, покрытие 80%, релиз по чек-листу.
 
