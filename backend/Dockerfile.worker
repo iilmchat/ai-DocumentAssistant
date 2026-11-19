@@ -1,6 +1,6 @@
 # Этап 2: отдельный образ воркера OCR.
 # tesseract-ocr + rus+eng, ocrmypdf (deskew/denoise предобработка), poppler-utils.
-FROM python:3.11-slim
+FROM python:3.15-slim
 
 WORKDIR /app
 
