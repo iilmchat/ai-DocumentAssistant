@@ -19,7 +19,7 @@ jobs:
     container:
       image: semgrep/semgrep
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Run Semgrep
         run: semgrep scan --config auto --sarif --output semgrep.sarif || true
       - name: Upload SARIF
@@ -33,7 +33,7 @@ jobs:
     # Запускаем только по расписанию или вручную: на PR стейдж может быть не поднят
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: ZAP Baseline Scan
         uses: zaproxy/action-baseline@v0.12.0
         with:
