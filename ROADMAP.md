@@ -109,7 +109,7 @@
 - `[~] P1` **T10-01** Playwright e2e: локатор исправлен (`exact: true`) после красного CI; CI-прогон на стейдже — отдельно `[?]`
 - `[x] P1` **T10-02** Property-based (`hypothesis`, 4 теста) и контрактные (`schemathesis`, OpenAPI-схема + invalid-input) тесты
 - `[x] P2` **T10-03** `mutmut` в dev-зависимостях; запуск на критичных модулях — ручной (медленный)
-- `[~] P2` **T10-04** Coverage поднят с 61% до **73%** (worker 94%, retention/usage 100%); цель 80% требует интеграционных тестов БД — перенесено `[?]`
+- `[x] P2` **T10-04** Coverage поднят с 61% до **80.07%**, порог в `pytest.ini` = 80; worker 94%, cache/document_translation/retention/usage 100%
 - `[x] P2` **T10-05** `KNOWN_ISSUES.md` обновлён, README ссылается на Roadmap
 - `[x] P2` **T10-06** ARIA role/tablist/aria-pressed, keyboard-only навигация, focus-visible, RU/EN i18n; полный WCAG-аудит — отдельно
 - `[x] P2` **T10-07** Release checklist `docs/operations/release-checklist.md` + rollback-процедура

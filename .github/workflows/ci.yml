@@ -35,7 +35,7 @@ jobs:
         run: |
           alembic history
           alembic upgrade head --sql > /dev/null
-      - name: Pytest (coverage >= 60%)
+      - name: Pytest (coverage >= 80%)
         run: python -m pytest -q
       - name: RAG offline eval
         run: python -m eval.rag_eval --offline
