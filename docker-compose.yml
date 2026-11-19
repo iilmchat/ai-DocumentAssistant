@@ -125,6 +125,34 @@ services:
       redis:
         condition: service_healthy
 
+  # T6: отдельная очередь перевода (самая дорогая операция — лимит стоимости в .env)
+  translation-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ai_translation_worker
+    restart: unless-stopped
+    command: celery -A app.worker.celery_app worker --loglevel=info -Q translation --concurrency=1
+    env_file:
+      - ./backend/.env
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@${DB_HOST:-db}:${DB_PORT:-5432}/${POSTGRES_DB:-ai_documents}"
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      SECRET_KEY: ${SECRET_KEY:-super_secret_key_change_me_in_production}
+      UPLOAD_DIR: /app/storage
+    volumes:
+      - shared_storage:/app/storage
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   ocr-worker:
     build:
       context: ./backend

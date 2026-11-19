@@ -73,6 +73,15 @@ class Settings(BaseSettings):
     LLM_MONTHLY_BUDGET_USD: float = 100.0
     PROMPT_VERSION: str = "v1"
 
+    # --- T6: двуязычные документы ---
+    TRANSLATION_ENABLED: bool = True
+    TRANSLATION_TARGET_LANGUAGE: str = "ru"  # язык по умолчанию для UI
+    TRANSLATION_QUEUE: str = "translation"
+    TRANSLATION_MAX_CHARS_PER_REQUEST: int = 4000
+    TRANSLATION_CACHE_TTL_SECONDS: int = 86400
+    TRANSLATION_COST_LIMIT_USD: float = 20.0  # лимит на документ
+    SUPPORTED_LANGUAGES: str = "ru,en,de,fr,es"
+
     # --- Пул БД и конкуренция LLM (S3) ---
     DB_POOL_SIZE: int = 10
     DB_MAX_OVERFLOW: int = 20

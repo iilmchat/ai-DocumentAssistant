@@ -78,6 +78,15 @@
 ### `POST /api/v1/chat/stream`
 То же, что `/ask`, но ответ стримится через SSE: события `citations` (массив цитат), `token` (`{"delta": "..."}`), `done` / `error`.
 
+### `POST /api/v1/documents/{id}/translate?target_language=ru`
+T6: запуск перевода (202). Документ переводится в отдельной очереди; оригинал не меняется.
+
+### `GET /api/v1/documents/{id}/translation` / `DELETE /api/v1/documents/{id}/translation`
+Статус и статистика перевода (`total_chunks`, `translated_chunks`) и удаление перевода.
+
+### `GET|POST /api/v1/documents/{id}/glossary`
+Список и добавление терминов перевода (`source_term`, `target_term`, `target_language`).
+
 ### `GET /api/v1/documents/{id}/pages`
 Постраничный текст с методом извлечения и confidence (используется вкладкой «Страницы» и цитатами).
 

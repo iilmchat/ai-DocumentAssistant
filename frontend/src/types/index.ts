@@ -25,6 +25,8 @@ export interface DocumentItem {
   status: DocumentStatus
   summary: string | null
   created_at: string
+  language?: string | null
+  translation_language?: string | null
 }
 
 export interface PageItem {
@@ -32,6 +34,26 @@ export interface PageItem {
   text: string
   extraction_method: string
   confidence: number
+  text_translated?: string | null
+  translation_language?: string | null
+}
+
+export interface TranslationStatus {
+  document_id: string
+  source_language: string | null
+  target_language: string | null
+  status: 'pending' | 'completed' | 'failed'
+  total_chunks: number
+  translated_chunks: number
+  failed_chunks: number
+}
+
+export interface GlossaryTerm {
+  id: string
+  source_term: string
+  target_term: string
+  source_language: string | null
+  target_language: string | null
 }
 
 export interface DocumentList {

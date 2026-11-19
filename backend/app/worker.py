@@ -46,6 +46,7 @@ celery_app = Celery(
 celery_app.conf.task_routes = {
     "process_document_task": {"queue": "default"},
     "process_scanned_document_task": {"queue": settings.CELERY_OCR_QUEUE},
+    "translate_document_task": {"queue": settings.TRANSLATION_QUEUE},
     "dead_letter_task": {"queue": "dlq"},
 }
 # одна тяжёлая OCR-задача за раз на воркер, чтобы не забить память
@@ -177,6 +178,11 @@ async def async_process_document(document_id: str, file_path: str):
                 # S3: после реиндексации старый кэш эмбеддингов запросов неактуален
                 await invalidate_embedding_cache()
 
+            # T6: определяем язык оригинала после извлечения текста
+            from app.core.language import detect_language
+
+            doc.language = detect_language(full_text)
+
             summary = await generate_document_summary(full_text)
             doc.summary = summary
             await save_summary_version(session, doc.id, summary)
@@ -189,6 +195,45 @@ async def async_process_document(document_id: str, file_path: str):
                 doc.status = "failed"
                 await session.commit()
             raise
+
+
+@celery_app.task(name="translate_document_task", bind=True, max_retries=2)
+def translate_document_task(
+    self, document_id: str, target_language: str, user_id: str, request_id: str | None = None
+):
+    """T6: перевод документа в отдельной очереди."""
+    import uuid
+
+    from app.services.document_translation import translate_document
+
+    token = structlog.contextvars.bind_contextvars(
+        request_id=request_id or "system", document_id=document_id, task=self.name
+    )
+    started = time.perf_counter()
+    CELERY_TASKS.labels(task=self.name, status="started").inc()
+    try:
+
+        async def _run():
+            async with AsyncSessionLocal() as session:
+                await translate_document(
+                    session,
+                    uuid.UUID(document_id),
+                    target_language,
+                    uuid.UUID(user_id),
+                )
+
+        asyncio.run(_run())
+        CELERY_TASKS.labels(task=self.name, status="success").inc()
+    except Exception as exc:
+        CELERY_TASKS.labels(task=self.name, status="failed").inc()
+        log.exception("translation.failed", error=str(exc))
+        if self.request.retries >= self.max_retries:
+            dead_letter_task.delay(document_id, target_language, str(exc), request_id)
+            return
+        raise self.retry(exc=exc, countdown=60) from exc
+    finally:
+        CELERY_LATENCY.labels(task=self.name).observe(time.perf_counter() - started)
+        structlog.contextvars.reset_contextvars(**token)
 
 
 @celery_app.task(name="cleanup_retention_task")

@@ -23,3 +23,4 @@
    - [Threat model](security/threat-model.md)
 6. **Руководство пользователя (`/docs/user_guide/`)**
    - [Инструкция по работе с системой](user_guide/how-to-use.md)
+   - [Перевод документов](user_guide/translation.md)

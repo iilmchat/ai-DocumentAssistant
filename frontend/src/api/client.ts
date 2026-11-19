@@ -2,7 +2,9 @@ import {
   AuthResponse,
   DocumentItem,
   DocumentList,
+  GlossaryTerm,
   PageItem,
+  TranslationStatus,
   ChatResponse,
   SourceCitation,
   SummaryVersion,
@@ -178,6 +180,52 @@ export const apiClient = {
     return response.json()
   },
 
+  // --- T6: двуязычные документы ---
+  async translateDocument(documentId: string, targetLanguage: string): Promise<void> {
+    const response = await authFetch(
+      `${API_BASE_URL}/api/v1/documents/${documentId}/translate?target_language=${targetLanguage}`,
+      { method: 'POST' }
+    )
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}))
+      throw new Error(err.detail || 'Не удалось запустить перевод')
+    }
+  },
+
+  async getTranslationStatus(documentId: string): Promise<TranslationStatus> {
+    const response = await authFetch(`${API_BASE_URL}/api/v1/documents/${documentId}/translation`)
+    if (!response.ok) throw new Error('Не удалось получить статус перевода')
+    return response.json()
+  },
+
+  async deleteTranslation(documentId: string): Promise<void> {
+    const response = await authFetch(`${API_BASE_URL}/api/v1/documents/${documentId}/translation`, {
+      method: 'DELETE',
+    })
+    if (!response.ok) throw new Error('Не удалось удалить перевод')
+  },
+
+  async getGlossary(documentId: string): Promise<GlossaryTerm[]> {
+    const response = await authFetch(`${API_BASE_URL}/api/v1/documents/${documentId}/glossary`)
+    if (!response.ok) throw new Error('Не удалось загрузить глоссарий')
+    return response.json()
+  },
+
+  async addGlossaryTerm(
+    documentId: string,
+    source: string,
+    target: string,
+    targetLanguage = 'ru'
+  ): Promise<void> {
+    const response = await authFetch(
+      `${API_BASE_URL}/api/v1/documents/${documentId}/glossary` +
+        `?source_term=${encodeURIComponent(source)}&target_term=${encodeURIComponent(target)}` +
+        `&target_language=${targetLanguage}`,
+      { method: 'POST' }
+    )
+    if (!response.ok) throw new Error('Не удалось добавить термин')
+  },
+
   async listVersions(documentId: string): Promise<SummaryVersion[]> {
     const response = await authFetch(`${API_BASE_URL}/api/v1/documents/${documentId}/versions`)
     if (!response.ok) throw new Error('Не удалось загрузить историю версий')
@@ -193,6 +241,23 @@ export const apiClient = {
       throw new Error(err.detail || 'Не удалось пересоздать конспект')
     }
     return response.json()
+  },
+
+  /** T6: экспорт перевода. */
+  async downloadTranslation(documentId: string, format: 'md' | 'docx' | 'pdf'): Promise<void> {
+    const response = await authFetch(
+      `${API_BASE_URL}/api/v1/documents/${documentId}/export?format=${format}&translated=true`
+    )
+    if (!response.ok) throw new Error('Не удалось скачать перевод')
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const link = window.document.createElement('a')
+    link.href = url
+    link.download = `translation.${format}`
+    window.document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
   },
 
   /** S3-08: стриминг генерации конспекта. */

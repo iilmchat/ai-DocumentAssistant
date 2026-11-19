@@ -1,5 +1,13 @@
 import React, { useState, useEffect } from 'react'
-import { BookOpen, MessageSquare, FileText, AlertCircle, LogOut, Files } from 'lucide-react'
+import {
+  BookOpen,
+  MessageSquare,
+  FileText,
+  AlertCircle,
+  LogOut,
+  Files,
+  Languages,
+} from 'lucide-react'
 import { useDocuments } from './hooks/useDocuments'
 import { useDocumentChat } from './hooks/useDocumentChat'
 import { useAuth } from './hooks/useAuth'
@@ -9,9 +17,10 @@ import { Sidebar } from './components/Sidebar'
 import { SummaryViewer } from './components/SummaryViewer'
 import { ChatPanel } from './components/ChatPanel'
 import { PagesViewer } from './components/PagesViewer'
+import { TranslationPanel } from './components/TranslationPanel'
 import { useI18n } from './i18n'
 
-type ActiveTab = 'summary' | 'chat' | 'pages'
+type ActiveTab = 'summary' | 'chat' | 'pages' | 'translation'
 
 function MainApp({ user, onLogout }: { user: UserInfo; onLogout: () => void }) {
   const { documents, isLoading, isUploading, error, uploadFile, removeDocument, refresh } =
@@ -133,12 +142,32 @@ function MainApp({ user, onLogout }: { user: UserInfo; onLogout: () => void }) {
                   <Files className="w-4 h-4" />
                   {t('pagesTab')}
                 </button>
+
+                <button
+                  role="tab"
+                  aria-selected={activeTab === 'translation'}
+                  onClick={() => setActiveTab('translation')}
+                  className={`pb-3 text-sm font-medium border-b-2 transition-colors inline-flex items-center gap-2 ${
+                    activeTab === 'translation'
+                      ? 'border-indigo-600 text-indigo-600'
+                      : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <Languages className="w-4 h-4" />
+                  {t('translate')}
+                </button>
               </div>
             </header>
 
             <div className="flex-1 overflow-y-auto">
               {activeTab === 'summary' ? (
                 <SummaryViewer document={selectedDoc} onUpdated={refresh} />
+              ) : activeTab === 'translation' ? (
+                <TranslationPanel
+                  documentId={selectedDoc.id}
+                  sourceLanguage={selectedDoc.language ?? null}
+                  onChanged={refresh}
+                />
               ) : activeTab === 'pages' ? (
                 <PagesViewer documentId={selectedDoc.id} focusedPage={focusedPage} />
               ) : (

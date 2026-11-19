@@ -92,6 +92,48 @@ async def set_cached_embedding(text: str, vector: list[float]) -> None:
         logger.warning("Redis embedding cache unavailable: %s", exc)
 
 
+# --- T6: кэш переводов ---
+TRANSLATION_CACHE_VERSION_KEY = "translation:cache_version"
+
+
+def _translation_key(text: str, target: str, markdown: bool) -> str:
+    import hashlib
+
+    digest = hashlib.sha256(f"{target}:{markdown}:{text}".encode()).hexdigest()
+    return f"translation:{digest}"
+
+
+async def get_cached_translation(text: str, target: str, markdown: bool = False) -> str | None:
+    try:
+        version = await redis_client.get(TRANSLATION_CACHE_VERSION_KEY) or "0"
+        raw = await redis_client.get(f"{_translation_key(text, target, markdown)}:{version}")
+        return raw
+    except Exception as exc:
+        logger.warning("Redis translation cache unavailable: %s", exc)
+        return None
+
+
+async def set_cached_translation(
+    text: str, target: str, value: str, markdown: bool = False
+) -> None:
+    try:
+        version = await redis_client.get(TRANSLATION_CACHE_VERSION_KEY) or "0"
+        await redis_client.setex(
+            f"{_translation_key(text, target, markdown)}:{version}",
+            settings.TRANSLATION_CACHE_TTL_SECONDS,
+            value,
+        )
+    except Exception as exc:
+        logger.warning("Redis translation cache unavailable: %s", exc)
+
+
+async def invalidate_translation_cache() -> None:
+    try:
+        await redis_client.incr(TRANSLATION_CACHE_VERSION_KEY)
+    except Exception as exc:
+        logger.warning("Redis translation cache unavailable: %s", exc)
+
+
 async def invalidate_embedding_cache() -> None:
     """Инкремент версии — все старые ключи становятся недосягаемыми."""
     try:

@@ -50,7 +50,9 @@ class ChatResponse(BaseModel):
     citations: list[SourceCitation]
 
 
-async def _vector_search(db: AsyncSession, doc_id: str, q_vec: str, limit: int):
+async def _vector_search(
+    db: AsyncSession, doc_id: str, q_vec: str, limit: int, *, translated: bool = False
+):
     import time
 
     started = time.perf_counter()
@@ -59,12 +61,15 @@ async def _vector_search(db: AsyncSession, doc_id: str, q_vec: str, limit: int):
             sql_text("SET LOCAL hnsw.ef_search = :ef"),
             {"ef": settings.HNSW_EF_SEARCH},
         )
+    column = "embedding_translated" if translated else "embedding"
+    # T6: при поиске по переводу отдаём переведённый текст в колонке content
+    content = "content_translated" if translated else "content"
     rows = await db.execute(
-        sql_text("""
-        SELECT id, content, page_numbers, headings, extraction_method
+        sql_text(f"""
+        SELECT id, {content} AS content, page_numbers, headings, extraction_method
         FROM document_chunks
-        WHERE document_id = :doc_id
-        ORDER BY embedding <=> CAST(:q_vec AS vector)
+        WHERE document_id = :doc_id AND {column} IS NOT NULL
+        ORDER BY {column} <=> CAST(:q_vec AS vector)
         LIMIT :limit
     """),
         {"doc_id": doc_id, "q_vec": q_vec, "limit": limit},
@@ -124,7 +129,8 @@ async def _retrieve_context(payload: ChatRequest, db: AsyncSession, current_user
             Document.user_id == current_user.id,
         )
     )
-    if not doc_res.scalars().first():
+    doc = doc_res.scalars().first()
+    if not doc:
         raise NotFoundError("Документ не найден.")
 
     RAG_QUERIES.inc()
@@ -133,9 +139,16 @@ async def _retrieve_context(payload: ChatRequest, db: AsyncSession, current_user
     question_vector = ensure_embedding_dim(q_embeddings[0])
     vec_rows = await _vector_search(db, str(payload.document_id), str(question_vector), fetch_k)
     fts_rows = await _fts_search(db, str(payload.document_id), payload.question, fetch_k)
-    candidates = reciprocal_rank_fusion(vec_rows, fts_rows, k=settings.RRF_K)[
-        : settings.RERANK_TOP_K
-    ]
+
+    # T6: если у документа есть перевод — ищем и по нему, объединяя RRF
+    rankings = [vec_rows, fts_rows]
+    if doc and doc.translation_language:
+        translated_rows = await _vector_search(
+            db, str(payload.document_id), str(question_vector), fetch_k, translated=True
+        )
+        rankings.append(translated_rows)
+
+    candidates = reciprocal_rank_fusion(*rankings, k=settings.RRF_K)[: settings.RERANK_TOP_K]
     if settings.RERANK_ENABLED and len(candidates) > payload.top_k:
         fused = await rerank_chunks(payload.question, candidates, payload.top_k)
     else:

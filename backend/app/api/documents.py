@@ -8,15 +8,24 @@ from datetime import UTC, datetime
 import structlog.contextvars
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response, StreamingResponse
-from sqlalchemy import func
+from sqlalchemy import func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.api.auth import get_current_user
+from app.core.cache import invalidate_translation_cache
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal, get_db
 from app.core.errors import NotFoundError
-from app.models.models import Document, DocumentChunk, DocumentPage, SummaryVersion, User
+from app.core.language import validate_language
+from app.models.models import (
+    Document,
+    DocumentChunk,
+    DocumentPage,
+    Glossary,
+    SummaryVersion,
+    User,
+)
 from app.schemas.schemas import (
     DocumentList,
     DocumentProgress,
@@ -34,7 +43,12 @@ from app.services.file_validation import (
     count_pdf_pages,
     validate_upload,
 )
-from app.worker import process_document_task, process_scanned_document_task, save_summary_version
+from app.worker import (
+    process_document_task,
+    process_scanned_document_task,
+    save_summary_version,
+    translate_document_task,
+)
 
 router = APIRouter(prefix="/api/v1/documents", tags=["Documents"])
 
@@ -304,6 +318,162 @@ async def document_pages(
     return result.scalars().all()
 
 
+# ---------------------------------------------------------------------------
+# T6: двуязычные документы
+# ---------------------------------------------------------------------------
+
+
+@router.post("/{document_id}/translate", status_code=202)
+async def translate_document_endpoint(
+    request: Request,
+    document_id: uuid.UUID,
+    target_language: str = Query("ru"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Запускает перевод документа в отдельной очереди."""
+    doc = await _get_owned_document(db, document_id, current_user.id)
+    target = validate_language(target_language)
+    if doc.status != "completed":
+        raise HTTPException(status_code=409, detail="Документ ещё не обработан")
+    if doc.language == target:
+        raise HTTPException(status_code=400, detail="Документ уже на целевом языке")
+
+    # помечаем статусы чанков как pending сразу, чтобы UI видел прогресс
+    await db.execute(
+        update(DocumentChunk)
+        .where(DocumentChunk.document_id == doc.id)
+        .values(translation_status="pending", translation_language=target)
+    )
+    await db.commit()
+    request_id = structlog.contextvars.get_contextvars().get("request_id")
+    translate_document_task.delay(str(doc.id), target, str(current_user.id), request_id)
+    return {"document_id": str(doc.id), "target_language": target, "status": "pending"}
+
+
+@router.get("/{document_id}/translation")
+async def get_translation_status(
+    document_id: uuid.UUID,
+    target_language: str | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Возвращает статус и статистику перевода."""
+    doc = await _get_owned_document(db, document_id, current_user.id)
+    total = await db.scalar(
+        select(func.count()).select_from(DocumentChunk).where(DocumentChunk.document_id == doc.id)
+    )
+    done = await db.scalar(
+        select(func.count())
+        .select_from(DocumentChunk)
+        .where(DocumentChunk.document_id == doc.id, DocumentChunk.translation_status == "done")
+    )
+    failed = await db.scalar(
+        select(func.count())
+        .select_from(DocumentChunk)
+        .where(DocumentChunk.document_id == doc.id, DocumentChunk.translation_status == "failed")
+    )
+    return {
+        "document_id": str(doc.id),
+        "source_language": doc.language,
+        "target_language": target_language or doc.translation_language,
+        "status": "completed" if (total and done == total) else ("failed" if failed else "pending"),
+        "total_chunks": total or 0,
+        "translated_chunks": done or 0,
+        "failed_chunks": failed or 0,
+    }
+
+
+@router.delete("/{document_id}/translation", status_code=204)
+async def delete_translation(
+    document_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Удаляет перевод (оригинал не трогается)."""
+    doc = await _get_owned_document(db, document_id, current_user.id)
+    await db.execute(
+        update(DocumentChunk)
+        .where(DocumentChunk.document_id == doc.id)
+        .values(
+            content_translated=None,
+            embedding_translated=None,
+            translation_language=None,
+            translation_status="none",
+        )
+    )
+    await db.execute(
+        update(DocumentPage)
+        .where(DocumentPage.document_id == doc.id)
+        .values(text_translated=None, translation_language=None)
+    )
+    await db.commit()
+
+
+@router.get("/{document_id}/glossary")
+async def list_glossary(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    rows = (
+        (await db.execute(select(Glossary).where(Glossary.user_id == current_user.id)))
+        .scalars()
+        .all()
+    )
+    return [
+        {
+            "id": str(row.id),
+            "source_term": row.source_term,
+            "target_term": row.target_term,
+            "source_language": row.source_language,
+            "target_language": row.target_language,
+        }
+        for row in rows
+    ]
+
+
+@router.post("/{document_id}/glossary", status_code=201)
+async def add_glossary_term(
+    document_id: uuid.UUID,
+    source_term: str = Query(...),
+    target_term: str = Query(...),
+    target_language: str = Query("ru"),
+    source_language: str | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await _get_owned_document(db, document_id, current_user.id)
+    target = validate_language(target_language)
+    existing = (
+        (
+            await db.execute(
+                select(Glossary).where(
+                    Glossary.user_id == current_user.id,
+                    Glossary.source_term == source_term,
+                    Glossary.target_language == target,
+                )
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if existing:
+        existing.target_term = target_term
+    else:
+        db.add(
+            Glossary(
+                user_id=current_user.id,
+                source_term=source_term,
+                target_term=target_term,
+                source_language=source_language,
+                target_language=target,
+            )
+        )
+    await db.commit()
+    await invalidate_translation_cache()
+    return {"source_term": source_term, "target_term": target_term, "target_language": target}
+
+
 @router.delete("/{document_id}", status_code=204)
 async def delete_document(
     request: Request,
@@ -335,6 +505,7 @@ async def delete_document(
 async def export_summary(
     document_id: uuid.UUID,
     format: str = Query("md", pattern="^(md|docx|pdf)$"),
+    translated: bool = Query(False, description="T6: экспортировать перевод вместо оригинала"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -354,18 +525,44 @@ async def export_summary(
         .scalars()
         .all()
     )
+    # T6: при экспорте перевода берём переведённый текст страниц и помечаем его
+    use_translation = translated and bool(doc.translation_language)
     sources = [
         {
             "page": page.page_number,
-            "extraction_method": page.extraction_method,
+            "extraction_method": (
+                f"{page.extraction_method}+mt"
+                if use_translation and page.text_translated
+                else page.extraction_method
+            ),
             "confidence": page.confidence,
-            "snippet": page.text[:300],
+            "snippet": (
+                (page.text_translated or page.text)[:300] if use_translation else page.text[:300]
+            ),
         }
         for page in pages[:200]
     ]
+    summary_text = doc.summary or ""
+    if use_translation:
+        translated_chunks = (
+            (
+                await db.execute(
+                    select(DocumentChunk.content_translated)
+                    .where(
+                        DocumentChunk.document_id == doc.id,
+                        DocumentChunk.content_translated.is_not(None),
+                    )
+                    .order_by(DocumentChunk.chunk_index)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if translated_chunks:
+            summary_text = "\n\n".join(translated_chunks)
     data = ExportData(
-        title=doc.title,
-        summary=doc.summary,
+        title=doc.title + (" [MT]" if use_translation else ""),
+        summary=summary_text,
         created_at=doc.created_at,
         sources=sources,
     )

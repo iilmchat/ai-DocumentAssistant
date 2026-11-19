@@ -40,6 +40,9 @@ class PageResponse(BaseModel):
     text: str
     extraction_method: str
     confidence: int
+    # T6
+    text_translated: str | None = None
+    translation_language: str | None = None
 
     class Config:
         from_attributes = True

@@ -50,6 +50,8 @@ class Document(Base):
     created_at = Column(TIMESTAMP(timezone=True), server_default=text("CURRENT_TIMESTAMP"))
     # S4: мягкое удаление — файл живёт grace-период, потом очищается retention-задачей
     deleted_at = Column(TIMESTAMP(timezone=True), nullable=True)
+    # T6: язык оригинала
+    language = Column(String(8), nullable=True)
 
 
 class DocumentPage(Base):
@@ -69,6 +71,9 @@ class DocumentPage(Base):
     confidence = Column(
         Integer, nullable=False, default=100
     )  # 0..100, храним целым для переносимости
+    # T6: постраничный перевод
+    text_translated = Column(Text, nullable=True)
+    translation_language = Column(String(8), nullable=True)
     __table_args__ = (
         UniqueConstraint("document_id", "page_number", name="uq_document_page"),
         Index("ix_document_pages_document", "document_id"),
@@ -91,7 +96,32 @@ class DocumentChunk(Base):
     extraction_method = Column(String(50), nullable=True)
     # Этап 5: полнотекстовый индекс под русскую конфигурацию Postgres
     search_vector = Column(TSVECTOR, nullable=True)
+    # T6: двуязычный поиск
+    content_translated = Column(Text, nullable=True)
+    embedding_translated = Column(Vector(settings.EMBEDDING_DIM), nullable=True)
+    translation_language = Column(String(8), nullable=True)
+    translation_status = Column(
+        String(20), nullable=False, default="none"
+    )  # none|pending|done|failed
     __table_args__ = (Index("ix_document_chunks_search", "search_vector", postgresql_using="gin"),)
+
+
+class Glossary(Base):
+    """T6: пользовательский глоссарий терминов перевода."""
+
+    __tablename__ = "glossaries"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    source_term = Column(String(255), nullable=False)
+    target_term = Column(String(255), nullable=False)
+    source_language = Column(String(8), nullable=True)
+    target_language = Column(String(8), nullable=True)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=text("CURRENT_TIMESTAMP"))
+    __table_args__ = (
+        UniqueConstraint("user_id", "source_term", "target_language", name="uq_glossary_term"),
+        Index("ix_glossaries_user", "user_id"),
+    )
 
 
 class TokenUsage(Base):
